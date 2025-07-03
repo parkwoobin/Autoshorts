@@ -13,8 +13,7 @@ class TargetCustomer(BaseModel):
 # LLM 생성 페르소나 데이터 
 class PersonaData(BaseModel):
     target_customer: TargetCustomer
-    persona_description: str
-    suggested_video_themes: List[str] = []  # LLM이 제안하는 영상 테마들
+    persona_description: str  # LLM이 생성한 페르소나 설명
     marketing_insights: str = ""  # 타겟 고객 마케팅 인사이트
 
 # LLM 생성 예시 프롬프트 

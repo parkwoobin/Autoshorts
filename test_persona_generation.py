@@ -22,7 +22,7 @@ async def main():
         age_range=["20-29"],
         gender="여성",
         language="한국어",
-        interests=["K-pop", "뷰티", "여행"]
+        interests=[""]
     )
 
     print("\n🎯 테스트용 타겟 고객 정보:")

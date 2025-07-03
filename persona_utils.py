@@ -15,32 +15,16 @@ OpenAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # OpenAI 클라이언트 초기화
 client = OpenAI(api_key=OpenAI_API_KEY)
 
-# --- 신규 추가: 트렌드 데이터 API 호출 시뮬레이션 ---
-async def fetch_trend_data_api(country: str) -> dict:
+# 다 구현하고 나중에 수정 -> 트렌드 데이터 API 호출 부분
+async def trend_data_api(country: str) -> dict:
     """
-    외부 API를 통해 특정 국가의 최신 트렌드 데이터를 가져옵니다. (시뮬레이션)
-    실제 구현 시에는 외부 API 호출 로직으로 대체됩니다.
+    외부 API를 통해 특정 국가,문화 등의 최신 트렌드 데이터를 가져옴
+    실제 구현 시에는 외부 API 호출 로직으로 구현
     """
-    print(f"\n🔍 {country}의 최신 트렌드 데이터를 외부 API에서 가져오는 중...")
-    await asyncio.sleep(0.5)  # 네트워크 지연 시뮬레이션
-    
-    if country == "한국":
-        return {
-            "top_keywords": ["제로 슈거", "Y2K 패션", "AI 프로필", "클라이밍"],
-            "emerging_platforms": ["TikTok 숏폼", "인스타그램 릴스", "네이버 블로그"],
-            "cultural_notes": "개인의 행복과 성장을 중시하는 '헬시 플레저' 문화가 확산 중입니다."
-        }
-    else:
-        return {
-            "top_keywords": ["Sustainable products", "AI tools", "DIY projects", "Wellness"],
-            "emerging_platforms": ["Short-form video", "Community forums"],
-            "cultural_notes": "Authenticity and social responsibility are highly valued."
-        }
-
 
 # 1단계: 타겟 고객 정보로 페르소나 생성
 async def generate_persona_with_llm(customer: TargetCustomer) -> PersonaData:
-    """LLM을 사용해 타겟 고객의 페르소나와 영상 테마를 생성합니다."""
+    """LLM을 사용해 타겟 고객의 페르소나를 생성"""
     age_ranges_str = ", ".join(customer.age_range)
     interests_str = ", ".join(customer.interests)
     
@@ -50,7 +34,7 @@ async def generate_persona_with_llm(customer: TargetCustomer) -> PersonaData:
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 마케팅 전문가이자 소비자 행동 분석가입니다. 제공된 타겟 고객 정보에만 기반하여, 상세한 페르소나와 그에 맞는 영상 테마 5가지를 제안해주세요."
+                    "content": "당신은 마케팅 전문가이자 소비자 행동 분석가입니다. 제공된 타겟 고객 정보에만 기반하여, 상세한 페르소나를 제안해주세요."
                 },
                 {
                     "role": "user", 
@@ -64,31 +48,21 @@ async def generate_persona_with_llm(customer: TargetCustomer) -> PersonaData:
 
 다음 형식으로 답변해주세요:
 
-**1. 페르소나 프로필:**
+**페르소나 프로필:**
 (이 타겟의 라이프스타일, 가치관, 소비 패턴, 미디어 소비 습관 등을 상세히 설명)
-
-**2. 추천 영상 테마 (5가지):**
-(위 페르소나에게 가장 효과적일 영상 컨셉 5가지를 구체적인 제목과 함께 제안)
 
 한국어로 작성해주세요.
 """
                 }
             ]
         )
-        
+        # LLM 응답에서 답변만 추출
         llm_response = completion.choices[0].message.content
         
-        # LLM 응답 파싱 (간단한 버전)
-        persona_description = llm_response
-        suggested_themes = [line for line in llm_response.split('\n') if line.strip().startswith(("1.", "2.", "3.", "4.", "5."))]
-        if not suggested_themes:
-            suggested_themes = ["내용 없음"]
-
         return PersonaData(
             target_customer=customer,
-            persona_description=persona_description,
-            suggested_video_themes=suggested_themes,
-            marketing_insights=""  # 마케팅 인사이트는 다음 단계에서 생성
+            persona_description=llm_response,
+            marketing_insights=""  # 마케팅 인사이트는 다음 단계에서 생성 (트렌드 데이터와 결합 한 내용)
         )
         
     except Exception as e:
