@@ -3,7 +3,7 @@
 """
 from typing import List
 from openai import OpenAI
-from models import TargetCustomer, PersonaData, ExamplePrompt, UserVideoInput, FinalVideoPrompt, DetailedStoryboardScene, EnhancedStoryboard
+from models import TargetCustomer, PersonaData, UserVideoInput, FinalVideoPrompt, DetailedStoryboardScene, EnhancedStoryboard
 import os
 from dotenv import load_dotenv
 import asyncio
@@ -21,6 +21,7 @@ async def trend_data_api(country: str) -> dict:
     외부 API를 통해 특정 국가,문화 등의 최신 트렌드 데이터를 가져옴
     실제 구현 시에는 외부 API 호출 로직으로 구현
     """
+# ==================================================================================
 
 # 1단계: 타겟 고객 정보로 페르소나 생성
 async def generate_persona_with_llm(customer: TargetCustomer) -> PersonaData:
@@ -62,155 +63,79 @@ async def generate_persona_with_llm(customer: TargetCustomer) -> PersonaData:
         return PersonaData(
             target_customer=customer,
             persona_description=llm_response,
-            marketing_insights=""  # 마케팅 인사이트는 다음 단계에서 생성 (트렌드 데이터와 결합 한 내용)
+            marketing_insights=""  # 마케팅 인사이트는 트렌드 데이터와 결합하여 생성할 예정
         )
         
     except Exception as e:
         print(f"⚠️ OpenAI API 호출 실패 (페르소나 생성): {e}")
-        
 
-
-# 2단계: 페르소나와 트렌드 데이터를 결합하여 마케팅 인사이트 생성
-async def generate_marketing_insights_with_llm(persona: PersonaData, trend_data: dict) -> str:
-    """생성된 페르소나와 트렌드 데이터를 바탕으로 LLM을 통해 마케팅 인사이트를 생성합니다."""
-    print("\n🤖 생성된 페르소나와 트렌드 데이터를 결합하여 마케팅 전략을 수립합니다...")
+# ==================================================================================
+# LLM 기반 광고 영상 예시 프롬프트 생성 함수
+async def create_ad_example(persona: PersonaData) -> str:
+    """페르소나를 기반으로 LLM이 전문적인 광고 예시를 생성"""
     
-    trend_keywords = ", ".join(trend_data['top_keywords'])
-    trend_platforms = ", ".join(trend_data['emerging_platforms'])
-    trend_notes = trend_data['cultural_notes']
-
     try:
         completion = client.chat.completions.create(
             model="gpt-4.1-nano-2025-04-14",
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 최고의 데이터 기반 마케팅 전략가입니다. 페르소나의 특징과 최신 트렌드 데이터를 결합하여, 즉시 실행 가능한 구체적인 마케팅 전략을 수립해주세요."
-                },
-                {
-                    "role": "user",
-                    "content": f"""
-다음 두 가지 정보를 종합하여, 이 페르소나를 공략할 최적의 마케팅 전략을 제안해주세요.
+                    "content": """
+당신은 페르소나 분석에 기반하여 광고 전략을 수립하는 '광고 기획 전문가'이자, 광고의 비주얼을 책임지는 '크리에이티브 디렉터'입니다.
+주어진 타겟 페르소나 정보를 깊이 있게 분석하여, 다음 단계에 따라 가장 효과적인 광고 캠페인 결과물을 생성해야 합니다.
 
-**1. 타겟 페르소나 프로필:**
+**[작업 목표]**
+페르소나 맞춤형 광고 컨셉 1개와, 그 컨셉의 핵심 장면을 시각화할 수 있는 AI 이미지 생성용 프롬프트 1개를 만드는 것입니다.
+
+**[작업 수행 단계]**
+
+**1단계: 페르소나 분석**
+- 주어진 페르소나의 라이프스타일, 가치관, 소비 패턴, 고민(Pain Point)을 파악합니다.
+- 이 페르소나가 어떤 메시지와 비주얼에 가장 크게 반응할지 예측합니다.
+
+**2단계: 광고 컨셉 기획**
+- 1단계 분석을 바탕으로, 아래 형식에 맞춰 광고 영상 컨셉을 구체적으로 작성합니다.
+    - **[핵심 메시지]**: 페르소나의 마음을 사로잡을 단 한 줄의 매력적인 문장.
+    - **[광고 컨셉]**: 제품/서비스가 페르소나의 일상에 어떻게 긍정적인 변화를 주는지 구체적인 스토리라인으로 설명.
+    - **[영상 분위기]**: 영상의 전체적인 색감, 조명, 음악, 편집 스타일 등을 그려지듯 묘사.
+    - **[기대 효과]**: 광고를 통해 페르소나가 무엇을 느끼고, 어떤 행동을 하기를 기대하는지 명시.
+
+**3단계: AI 이미지 생성 프롬프트 작성**
+- 2단계에서 기획한 광고 컨셉 중, 가장 임팩트 있는 핵심 장면 하나를 선택합니다.
+- 선택한 장면을 AI가 시각적으로 구현할 수 있도록, 아래의  '스토리보드 6요소'를 반드시 모두 포함하여 구체적이고 상세한 프롬프트를 작성합니다.
+    - **[장면 (Scene)]**: 누가, 어디서, 무엇을 하고 있는지 구체적으로 묘사.
+    - **[카메라/샷 타입 (Camera/Shot Type)]**: 클로즈업, 와이드 샷, 특정 구도 등 카메라 기법 명시.
+    - **[조명·분위기 (Lighting/Mood)]**: 자연광, 스튜디오 조명 등 빛의 종류와 그로 인해 연출되는 분위기 설명.
+    - **[스타일 (Style)]**: 사진처럼 사실적인 스타일, 영화적인 스타일, 미니멀리즘 등 비주얼 스타일 정의.
+    - **[추가 요소 (Additional Elements)]**: 강조하고 싶은 소품, 인물의 표정, 배경의 특정 요소 등 필수 포함 사항.
+    - **[제외 요소 (Exclusion Elements)]**: 로고, 텍스트, 불필요한 인물 등 반드시 제외해야 할 요소.
+
+**[준수 사항]**
+- 모든 결과물은 한국어로 작성해야 합니다.
+- 각 단계의 결과물은 제목과 함께 명확하게 구분하여 제시해야 합니다.
+"""
+},
+{
+    "role": "user",
+    "content": f"""
+다음 타겟 페르소나를 분석하여 광고 영상 예시 프롬프트를 생성해주세요:
+
 {persona.persona_description}
 
-**2. 최신 트렌드 데이터:**
-- 주요 키워드: {trend_keywords}
-- 신흥 플랫폼: {trend_platforms}
-- 문화적 노트: {trend_notes}
-
-**결과물 형식:**
-
-**[핵심 전략 요약]**
-(페르소나와 트렌드를 관통하는 핵심 컨셉 1~2 문장)
-
-**[구체적인 실행 방안]**
-1. **콘텐츠 전략**: 어떤 콘텐츠를 만들어야 하는가? (트렌드 키워드 활용)
-2. **플랫폼 전략**: 어떤 채널에 집중해야 하는가? (신흥 플랫폼 활용)
-3. **메시징 전략**: 어떤 톤앤매너와 메시지로 소통해야 하는가? (문화적 노트 활용)
-
-실무에 바로 적용할 수 있도록 구체적이고 창의적인 아이디어를 한국어로 제안해주세요.
+위 형식을 사용하여 이 페르소나에게 효과적일 구체적이고 창의적인 광고 컨셉을 제안해주세요.
+한국어로 작성해주세요.
 """
                 }
-            ]
+            ],
+            temperature=0.8,
         )
+        
         return completion.choices[0].message.content
-
+        
     except Exception as e:
-        print(f"⚠️ OpenAI API 호출 실패 (인사이트 생성): {e}")
-        return "LLM 호출에 실패하여 마케팅 인사이트를 생성할 수 없습니다."
+        print(f"⚠️ OpenAI API 호출 실패: {e}")
 
-async def generate_example_prompts_with_llm(persona: PersonaData) -> List[ExamplePrompt]:
-    """LLM으로 다양한 예시 프롬프트 생성"""
-    customer = persona.target_customer
-    age_ranges_str = ", ".join(customer.age_range)
-    interests_str = ", ".join(customer.interests)
-    
-    # 3가지 다른 스타일의 예시 프롬프트 생성
-    examples = [
-        ExamplePrompt(
-            scenario_title="감성적 스토리텔링형",
-            content=f"""
-{age_ranges_str} {customer.gender}의 일상적 고민에서 시작하여, 
-{interests_str}와 관련된 해결책을 감성적으로 풀어내는 영상.
-
-구성: 주인공의 고민 → 우연한 발견 → 변화의 과정 → 만족스러운 결과
-분위기: 따뜻하고 공감 가능한 톤
-""",
-            key_messages=["공감대 형성", "자연스러운 해결", "긍정적 변화"],
-            tone_and_manner="따뜻하고 공감적인"
-        ),
-        ExamplePrompt(
-            scenario_title="문제 해결형",
-            content=f"""
-{age_ranges_str} {customer.gender}이 겪는 구체적인 문제를 명확히 제시하고,
-단계별 해결 과정을 논리적으로 보여주는 실용적 영상.
-
-구성: 문제 상황 → 해결책 제시 → 적용 과정 → 결과 확인
-분위기: 신뢰감 있고 전문적인 톤
-""",
-            key_messages=["명확한 문제 인식", "효과적인 해결책", "검증된 결과"],
-            tone_and_manner="신뢰감 있고 전문적인"
-        ),
-        ExamplePrompt(
-            scenario_title="라이프스타일 제안형",
-            content=f"""
-{interests_str}를 즐기는 {age_ranges_str} {customer.gender}의 
-더 나은 라이프스타일을 제안하는 영감을 주는 영상.
-
-구성: 현재 라이프스타일 → 개선 가능성 → 새로운 경험 → 업그레이드된 일상
-분위기: 활기차고 영감을 주는 톤
-""",
-            key_messages=["라이프스타일 업그레이드", "새로운 경험", "더 나은 일상"],
-            tone_and_manner="활기차고 영감을 주는"
-        )
-    ]
-    
-    return examples
-
-
-async def optimize_user_prompt_with_llm(persona: PersonaData, user_input: UserVideoInput) -> FinalVideoPrompt:
-    """사용자 입력을 LLM으로 최적화"""
-    customer = persona.target_customer
-    age_ranges_str = ", ".join(customer.age_range)
-    
-    # 사용자 입력을 분석하여 최적화된 프롬프트 생성
-    optimized_prompt = f"""
-타겟 페르소나: {age_ranges_str} {customer.gender} ({customer.country})
-관심사: {", ".join(customer.interests)}
-
-사용자 요청사항:
-{user_input.user_description}
-
-선택 테마: {", ".join(user_input.selected_themes)}
-추가 요구사항: {user_input.additional_requirements}
-
-최적화된 영상 컨셉:
-위 페르소나의 특성과 관심사를 고려하여, 사용자가 요청한 내용을
-{customer.language} 문화권에 맞게 효과적으로 전달하는 영상을 제작합니다.
-"""
-    
-    # 영상 길이 계산 (복잡도에 따라)
-    target_duration = 45 if len(user_input.user_description) > 100 else 30
-    
-    # 주요 장면 구성
-    key_scenes = [
-        "오프닝 (관심 유발)",
-        "문제/니즈 제시", 
-        "솔루션 소개",
-        "혜택 강조",
-        "행동 유도 클로징"
-    ]
-    
-    return FinalVideoPrompt(
-        persona=persona,
-        user_input=user_input,
-        optimized_prompt=optimized_prompt.strip(),
-        target_duration=target_duration,
-        key_scenes=key_scenes
-    )
-
+# ==================================================================================
 
 async def generate_detailed_storyboard_with_llm(final_prompt: FinalVideoPrompt) -> EnhancedStoryboard:
     """LLM으로 상세한 스토리보드 생성"""
@@ -364,3 +289,86 @@ def create_basic_storyboard(video_prompt_data: dict) -> List[dict]:
     ]
     
     return scenes
+
+# ==================================================================================
+
+# 2-2단계: 예시 프롬프트와 사용자 입력을 결합하여 최적화
+async def optimize_user_prompt_with_llm(persona: PersonaData, user_input: UserVideoInput, example_prompts: str) -> FinalVideoPrompt:
+    """사용자가 예시를 참고해서 작성한 내용을 LLM으로 전문적으로 최적화"""
+    
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4.1-nano-2025-04-14",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """당신은 광고 영상 제작 전문가입니다. 사용자가 제공한 영상 아이디어를 분석하고, 페르소나와 예시 프롬프트를 참고하여 전문적인 영상 제작 가이드라인으로 최적화해주세요.
+
+결과는 다음 형식으로 작성해주세요:
+
+**[최적화된 영상 컨셉]**
+(사용자 아이디어를 바탕으로 전문적으로 다듬어진 영상 컨셉 설명)
+
+**[핵심 장면 구성]**
+1. 오프닝 장면: (설명)
+2. 문제/니즈 제시: (설명)  
+3. 솔루션 소개: (설명)
+4. 혜택 강조: (설명)
+5. 클로징/CTA: (설명)
+
+**[권장 영상 길이]**
+(적정 시간 제안 - 30초, 45초, 60초 중 선택)
+
+모든 내용은 한국어로 작성해주세요."""
+                },
+                {
+                    "role": "user",
+                    "content": f"""
+**타겟 페르소나:**
+{persona.persona_description}
+
+**AI 생성 예시 프롬프트:**
+{example_prompts}
+
+**사용자가 입력한 영상 아이디어:**
+{user_input.user_description}
+
+위 정보들을 종합하여 사용자의 영상 아이디어를 전문적으로 최적화하고, 구체적인 장면 구성과 제작 가이드라인을 제안해주세요.
+"""
+                }
+            ],
+            temperature=0.7,
+        )
+        
+        llm_response = completion.choices[0].message.content
+        
+        # 간단한 파싱으로 핵심 장면들 추출 (실제로는 더 정교한 파싱 필요)
+        key_scenes = [
+            "오프닝 장면",
+            "문제/니즈 제시", 
+            "솔루션 소개",
+            "혜택 강조",
+            "클로징/CTA"
+        ]
+        
+        # 기본 60초로 설정 (실제로는 LLM 응답에서 파싱)
+        target_duration = 60
+        
+        return FinalVideoPrompt(
+            persona=persona,
+            user_input=user_input,
+            optimized_prompt=llm_response,
+            key_scenes=key_scenes,
+            target_duration=target_duration
+        )
+        
+    except Exception as e:
+        print(f"⚠️ OpenAI API 호출 실패 (프롬프트 최적화): {e}")
+        # 실패 시 기본 응답 반환
+        return FinalVideoPrompt(
+            persona=persona,
+            user_input=user_input,
+            optimized_prompt=f"사용자 아이디어: {user_input.user_description}\n\n기본 최적화가 적용되었습니다.",
+            key_scenes=["오프닝", "문제 제시", "솔루션", "혜택", "클로징"],
+            target_duration=60
+        )

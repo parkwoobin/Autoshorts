@@ -16,13 +16,6 @@ class PersonaData(BaseModel):
     persona_description: str  # LLM이 생성한 페르소나 설명
     marketing_insights: str = ""  # 타겟 고객 마케팅 인사이트
 
-# LLM 생성 예시 프롬프트 
-class ExamplePrompt(BaseModel):
-    scenario_title: str  # 시나리오 제목
-    content: str  # 예시 영상 내용
-    key_messages: List[str]  # 핵심 메시지들
-    tone_and_manner: str  # 톤앤매너
-
 # 사용자 입력 영상 프롬프트 
 class UserVideoInput(BaseModel):
     user_description: str  # 사용자가 입력한 영상 설명
