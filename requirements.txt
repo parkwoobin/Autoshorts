@@ -23,7 +23,7 @@ starlette==0.46.2
 tqdm==4.67.1
 typing-inspection==0.4.1
 typing_extensions==4.14.0
-urllib3==2.2.4
+urllib3==2.2.3
 uvicorn==0.34.0
 langchain==0.3.22
 langchain-openai==0.2.13

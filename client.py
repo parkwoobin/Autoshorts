@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from typing import List
+import os
+import asyncio
 
 # 모델들을 별도 파일에서 import
 from models import (
@@ -10,7 +12,8 @@ from models import (
 # LLM 유틸리티 함수들을 별도 파일에서 import
 from persona_utils import (
     generate_persona_with_llm, create_ad_example,
-    generate_scene_image_prompts_with_llm
+    generate_scene_image_prompts_with_llm, generate_images_with_runway,
+    create_image_with_runway
 )
 
 # 웹 애플리케이션 객체(서버) 생성
@@ -113,15 +116,105 @@ async def generate_storyboard():
     # 사용자 입력 가져오기
     user_input = UserVideoInput(**current_project["user_video_input"])
     
-    # LLM으로 장면별 이미지 프롬프트 생성
+    # LLM으로 장면별 이미지 프롬프트 생성 (기존 방식)
     storyboard = await generate_scene_image_prompts_with_llm(user_input.user_description)
     
-    # 프로젝트 상태에 저장
-    current_project["storyboard"] = storyboard.model_dump()
+    # SceneImagePrompt 그대로 저장 (복잡한 변환 없이)
+    current_project["storyboard"] = {
+        "scenes": [scene.model_dump() for scene in storyboard.scenes],
+        "total_scenes": len(storyboard.scenes),
+        "estimated_duration": storyboard.estimated_duration,
+        "video_concept": storyboard.video_concept
+    }
     
     return {
         "message": "스토리보드가 성공적으로 생성되었습니다.",
-        "storyboard": storyboard
+        "storyboard": {
+            "scenes": storyboard.scenes,
+            "total_scenes": len(storyboard.scenes),
+            "estimated_duration": storyboard.estimated_duration,
+            "video_concept": storyboard.video_concept
+        }
+    }
+
+# ==================================================================================
+"""
+4단계: Runway API를 활용한 실제 이미지 생성
+스토리보드의 각 장면별 프롬프트를 Runway API로 전송하여 실제 이미지 생성
+"""
+@app.post("/step4/generate-images")
+async def generate_storyboard_images():
+    """4단계: Runway API를 사용하여 스토리보드의 모든 장면을 실제 이미지로 생성"""
+    if not current_project["storyboard"]:
+        raise HTTPException(status_code=400, detail="먼저 1-3단계를 완료해주세요.")
+    
+    # 저장된 스토리보드 데이터에서 SceneImagePrompt 객체들 복원
+    storyboard_data = current_project["storyboard"]
+    scenes = [SceneImagePrompt(**scene_data) for scene_data in storyboard_data["scenes"]]
+    
+    if not scenes:
+        raise HTTPException(status_code=400, detail="생성할 장면이 없습니다.")
+    
+    runway_api_key = os.getenv("Runway_API_KEY")
+    if not runway_api_key:
+        # raise HTTPException(status_code=500, detail="Runway_API_KEY 환경 변수가 설정되지 않았습니다.")
+        # 로컬 테스트를 위해 임시로 에러 대신 ValueError 발생
+        raise ValueError("Runway_API_KEY 환경 변수가 설정되지 않았습니다.")
+
+    # 결과 처리를 위한 리스트 초기화
+    generated_images = []
+    successful_count = 0
+    failed_count = 0
+
+    # 모든 장면을 순차적으로 하나씩 처리
+    for i, scene in enumerate(scenes):
+        scene_num = i + 1
+        print(f"⏳ 장면 {scene_num}/{len(scenes)} 이미지 생성 시작...")
+        try:
+            # 각 장면의 이미지를 하나씩 생성하고 완료될 때까지 대기
+            result = await create_image_with_runway(
+                prompt_text=scene.promptText,
+                ratio=scene.ratio,
+                seed=scene.seed,
+                model=scene.model,
+                reference_images=[ref.model_dump() for ref in scene.referenceImages],
+                public_figure_moderation=scene.publicFigureModeration,
+                api_key=runway_api_key
+            )
+            
+            # 작업 성공 시
+            print(f"✅ 장면 {scene_num} 이미지 생성 완료: {result}")
+            generated_images.append({
+                "scene_number": scene_num,
+                "status": "success",
+                "image_url": result,
+                "error": None
+            })
+            successful_count += 1
+
+        except Exception as e:
+            # 작업 실행 중 예외 발생 시
+            print(f"❌ 장면 {scene_num} 이미지 생성 실패: {e}")
+            generated_images.append({
+                "scene_number": scene_num,
+                "status": "failed",
+                "error": str(e),
+                "image_url": None
+            })
+            failed_count += 1
+    
+    total_scenes = len(scenes)
+    success_rate = f"{(successful_count / total_scenes) * 100:.1f}%" if total_scenes > 0 else "0%"
+
+    return {
+        "message": "스토리보드 이미지 생성이 완료되었습니다.",
+        "generated_images": generated_images,
+        "summary": {
+            "total_scenes": total_scenes,
+            "successful": successful_count,
+            "failed": failed_count,
+            "success_rate": success_rate
+        }
     }
 
 # ==================================================================================

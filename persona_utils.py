@@ -5,7 +5,7 @@ from typing import List
 from openai import OpenAI
 from models import (
     TargetCustomer, PersonaData, UserVideoInput,
-    ReferenceImage, SceneImagePrompt, StoryboardOutput
+    ReferenceImage, SceneImagePrompt, StoryboardScene, StoryboardOutput
 )
 import os
 from dotenv import load_dotenv
@@ -201,4 +201,174 @@ async def generate_scene_image_prompts_with_llm(user_description: str) -> Storyb
         print(f"⚠️ LangChain LLM 호출 실패 (장면 프롬프트 생성): {e}")
         raise e
 
-# ==================================================================================    
+# ==================================================================================
+# Runway API 관련 import 추가
+import httpx
+import asyncio
+import time
+from typing import Optional
+
+# ==================================================================================
+# 4단계: Runway API를 활용한 실제 이미지 생성
+async def generate_images_with_runway(storyboard: StoryboardOutput) -> StoryboardOutput:
+    """Runway API를 사용해서 스토리보드의 각 장면을 실제 이미지로 생성"""
+    
+    runway_api_key = os.getenv("Runway_API_KEY")
+    if not runway_api_key:
+        raise ValueError("Runway_API_KEY 환경 변수가 설정되지 않았습니다.")
+    
+    print(f"🎬 총 {len(storyboard.scenes)} 장면의 이미지를 생성합니다...")
+    
+    # 각 장면별로 이미지 생성
+    updated_scenes = []
+    for i, scene in enumerate(storyboard.scenes, 1):
+        print(f"\n🖼️ 장면 {i} 이미지 생성 중...")
+        
+        try:
+            # Runway API로 이미지 생성 - SceneImagePrompt의 모든 필드 전달
+            image_url = await create_image_with_runway(
+                prompt_text=scene.image_prompt.promptText,
+                ratio=scene.image_prompt.ratio,
+                seed=scene.image_prompt.seed,
+                model=scene.image_prompt.model,
+                reference_images=[ref.model_dump() for ref in scene.image_prompt.referenceImages],
+                public_figure_moderation=scene.image_prompt.publicFigureModeration,
+                api_key=runway_api_key
+            )
+            
+            # 생성된 이미지 URL을 장면에 추가
+            scene.generated_image_url = image_url
+            scene.generation_status = "success"
+            print(f"✅ 장면 {i} 이미지 생성 완료: {image_url}")
+            
+        except Exception as e:
+            print(f"❌ 장면 {i} 이미지 생성 실패: {e}")
+            scene.generated_image_url = None
+            scene.generation_status = "failed"
+            scene.error_message = str(e)
+        
+        updated_scenes.append(scene)
+        
+        # API 호출 간격 조절 (Rate limiting 방지)
+        if i < len(storyboard.scenes):
+            await asyncio.sleep(2)
+    
+    # 업데이트된 장면들로 새 스토리보드 반환
+    return StoryboardOutput(
+        total_scenes=storyboard.total_scenes,
+        estimated_duration=storyboard.estimated_duration,
+        video_concept=storyboard.video_concept,
+        scenes=updated_scenes
+    )
+
+async def create_image_with_runway(
+    prompt_text: str,
+    ratio: str = "16:9",
+    seed: Optional[int] = None,
+    model: str = "gen4_image",
+    reference_images: List = None,
+    public_figure_moderation: str = "auto",
+    api_key: str = None
+) -> str:
+    """Runway API를 사용해서 단일 이미지 생성"""
+    
+    base_url = "https://api.dev.runwayml.com/v1"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "X-Runway-Version": "2024-11-06"  # API 버전 헤더 추가
+    }
+    
+    # 요청 페이로드 구성
+    payload = {
+        "promptText": prompt_text,
+        "ratio": ratio,
+        "model": model
+    }
+    
+    # 선택적 파라미터들 추가
+    if seed is not None:
+        payload["seed"] = seed
+        
+    if reference_images:
+        payload["referenceImages"] = reference_images
+        
+    if public_figure_moderation != "auto":
+        payload["publicFigureThreshold"] = public_figure_moderation
+    
+    async with httpx.AsyncClient(timeout=180) as client:  # 3분으로 단축
+        # 1. 이미지 생성 작업 요청
+        print(f"📤 Runway API 요청 중...")
+        print(f"   프롬프트: {prompt_text}...")
+        print(f"   비율: {ratio}, 모델: {model}")
+        
+        response = await client.post(
+            f"{base_url}/text_to_image",
+            headers=headers,
+            json=payload
+        )
+        
+        print(f"📋 API 응답 상태: {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"❌ API 응답 내용: {response.text}")
+            raise Exception(f"Runway API 요청 실패: {response.status_code} - {response.text}")
+        
+        task_data = response.json()
+        task_id = task_data["id"]
+        print(f"📋 작업 ID: {task_id}")
+        
+        # 2. 작업 완료까지 폴링
+        max_attempts = 36  # 최대 3분 대기 (5초 * 36)
+        for attempt in range(max_attempts):
+            print(f"⏳ 이미지 생성 진행 확인 중... ({attempt + 1}/{max_attempts})")
+            
+            # 작업 상태 확인
+            status_response = await client.get(
+                f"{base_url}/tasks/{task_id}",
+                headers=headers
+            )
+            
+            if status_response.status_code != 200:
+                print(f"❌ 상태 확인 실패: {status_response.status_code} - {status_response.text}")
+                raise Exception(f"작업 상태 확인 실패: {status_response.status_code}")
+            
+            status_data = status_response.json()
+            status = status_data.get("status")
+            progress = status_data.get("progress", 0)
+            
+            print(f"   상태: {status}, 진행도: {progress}%")
+            
+            if status == "SUCCEEDED":
+                # 성공! 이미지 URL 반환
+                image_output = status_data.get("output")
+                if not image_output:
+                    raise Exception("이미지 URL을 찾을 수 없습니다.")
+                
+                # Runway API가 리스트로 반환하는 경우 첫 번째 요소 추출
+                if isinstance(image_output, list) and len(image_output) > 0:
+                    image_url = image_output[0]
+                else:
+                    image_url = image_output
+                
+                print(f"✅ 이미지 생성 완료: {image_url}")
+                return image_url
+                
+            elif status == "FAILED":
+                error_msg = status_data.get("error", "알 수 없는 오류")
+                print(f"❌ 이미지 생성 실패: {error_msg}")
+                raise Exception(f"이미지 생성 실패: {error_msg}")
+                
+            elif status in ["PENDING", "RUNNING"]:
+                # 아직 진행 중, 5초 대기 후 재시도
+                await asyncio.sleep(5)
+                continue
+            else:
+                print(f"❌ 알 수 없는 상태: {status}")
+                raise Exception(f"알 수 없는 작업 상태: {status}")
+        
+        # 최대 시도 횟수 초과
+        print("❌ 이미지 생성 시간 초과")
+        raise Exception("이미지 생성 시간 초과 (3분)")
+
+# ==================================================================================

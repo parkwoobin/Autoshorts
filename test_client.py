@@ -55,6 +55,17 @@ class VideoGenerationClient:
             return response.json()
         except requests.exceptions.RequestException as e:
             return {"error": f"요청 실패: {e}"}
+    
+    def generate_images(self):
+        """4단계: 스토리보드 이미지 생성"""
+        try:
+            # 타임아웃을 5분으로 설정 (Runway API 처리 시간 고려)
+            response = requests.post(f"{self.base_url}/step4/generate-images", timeout=300)
+            return response.json()
+        except requests.exceptions.Timeout:
+            return {"error": "요청 시간 초과 (5분) - Runway API 처리가 오래 걸리고 있습니다."}
+        except requests.exceptions.RequestException as e:
+            return {"error": f"요청 실패: {e}"}
 
 def print_separator():
     print("=" * 60)
@@ -279,13 +290,50 @@ def main():
         
         for i, scene in enumerate(storyboard["scenes"], 1):
             print(f"🎬 장면 {i}")
+            # SceneImagePrompt 구조로 직접 접근
             print(f"   🎨 이미지 프롬프트: {scene.get('promptText', 'N/A')}")
-            print(f"   � 비율: {scene.get('ratio', 'N/A')}")
-            print(f"   � 시드: {scene.get('seed', 'N/A')}")
+            print(f"   📐 비율: {scene.get('ratio', 'N/A')}")
+            print(f"   🎲 시드: {scene.get('seed', 'N/A')}")
             print(f"   🖼️ 참조 이미지: {len(scene.get('referenceImages', []))}개")
             print()
         
-        print("🎉 모든 단계가 완료되었습니다!")
+        input("\nEnter를 눌러 4단계(이미지 생성)로 진행하세요...")
+        
+        # 4단계: 이미지 생성
+        print("\n⏳ Runway API를 사용하여 이미지를 생성하는 중...")
+        print("   (이미지 생성에는 30초~3분 정도 소요될 수 있습니다)")
+        result4 = client.generate_images()
+        
+        if "error" in result4:
+            print(f"❌ 오류: {result4['error']}")
+            return
+        
+        print("\n✅ 4단계 완료!")
+        print("\n🖼️ 생성된 이미지들:")
+        print_separator()
+        
+        if "generated_images" in result4:
+            for img in result4["generated_images"]:
+                scene_num = img.get("scene_number", "?")
+                status = img.get("status", "unknown")
+                
+                if status == "success":
+                    print(f"🎬 장면 {scene_num}: ✅ 성공")
+                    print(f"   📸 이미지 URL: {img.get('image_url', 'N/A')}")
+                else:
+                    print(f"🎬 장면 {scene_num}: ❌ 실패")
+                    print(f"   🚫 오류: {img.get('error', 'N/A')}")
+                print()
+        
+        if "summary" in result4:
+            summary = result4["summary"]
+            print(f"📊 결과 요약:")
+            print(f"   총 장면: {summary.get('total_scenes', 0)}개")
+            print(f"   성공: {summary.get('successful', 0)}개")
+            print(f"   실패: {summary.get('failed', 0)}개")
+            print(f"   성공률: {summary.get('success_rate', '0%')}")
+        
+        print("\n🎉 모든 단계가 완료되었습니다!")
         
     except KeyboardInterrupt:
         print("\n\n❌ 사용자에 의해 중단되었습니다.")
