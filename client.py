@@ -3,21 +3,14 @@ from typing import List
 
 # 모델들을 별도 파일에서 import
 from models import (
-    TargetCustomer, PersonaData, ExamplePrompt, UserVideoInput, 
-    FinalVideoPrompt, DetailedStoryboardScene, EnhancedStoryboard,
-    VideoPrompt, StoryboardScene, Storyboard,
-    # 새로운 이미지 생성용 모델들
-    ReferenceImage, SceneImagePrompt, SceneStoryboard, VideoStoryboard
+    TargetCustomer, PersonaData, UserVideoInput,
+    ReferenceImage, SceneImagePrompt, StoryboardOutput
 )
 
 # LLM 유틸리티 함수들을 별도 파일에서 import
 from persona_utils import (
     generate_persona_with_llm, create_ad_example,
-    optimize_user_prompt, generate_detailed_storyboard_with_llm,
-    generate_scene_image_prompts_with_llm,
-    # 기존 호환성 함수들
-    generate_persona, generate_example_prompt, combine_persona_and_prompt, 
-    create_basic_storyboard
+    generate_scene_image_prompts_with_llm
 )
 
 # 웹 애플리케이션 객체(서버) 생성
@@ -29,11 +22,6 @@ current_project = {
     "persona": None,
     "example_prompts": None,
     "user_video_input": None,
-    "final_prompt": None,
-    "enhanced_storyboard": None,
-    "video_storyboard": None,  # 새로운 이미지 생성용 스토리보드
-    # 기존 호환성
-    "video_prompt": None,
     "storyboard": None
 }
 
@@ -94,47 +82,45 @@ async def get_llm_example_prompts():
 
 # ==================================================================================
 """
-2단계: 예시 프롬프트 기반 더미 사용자 입력 생성 및 최적화 (백엔드 테스트용)
-실제 웹에서는 사용자가 example_prompts를 보고 직접 수정한 내용을 user_input으로 받음
+2단계: 사용자 비디오 입력 받기
+사용자가 예시 프롬프트를 보고 수정한 내용을 받음
 """
-# 사용자가 광고 생성 템플릿 예시를 보고 수정했다고 치자 
-user_example_sample = """
-30초 분량의 건강 보조제 광고 영상을 제작하고 싶습니다.
-
-** 광고 컨셉 **
-바쁜 직장인들이 에너지 부족으로 힘들어하다가, 우리 제품을 통해 활력을 되찾는 스토리
-
-** 원하는 분위기 **
-- 따뜻하고 친근한 느낌
-- 신뢰감 있는 톤
-- 현실적이고 공감 가능한 상황
-
-** 핵심 메시지 **
-"매일 지쳐있던 당신, 이제 달라질 시간입니다"
-
-** 주요 장면 구성 아이디어 **
-1. 오프닝: 피곤해하는 직장인의 모습
-2. 문제 상황: 업무 중 에너지 부족으로 힘들어함  
-3. 제품 소개: 간편하게 섭취할 수 있는 건강 보조제
-4. 변화된 모습: 활력 넘치는 일상
-5. 마무리: 제품명과 구매 안내
-
-이런 느낌으로 만들어주세요!
-"""
-
-@app.post("/step3/generate-enhanced-storyboard")
-async def generate_enhanced_storyboard():
-    """3단계: LLM 기반 상세 스토리보드 생성"""
-    if not current_project["final_prompt"]:
-        raise HTTPException(status_code=400, detail="먼저 1-2단계를 완료해주세요.")
+@app.post("/step2/video-input")
+async def set_user_video_input(video_input: UserVideoInput):
+    """사용자가 원하는 비디오 내용 입력"""
+    if not current_project["example_prompts"]:
+        raise HTTPException(status_code=400, detail="먼저 1-2단계(예시 프롬프트)를 완료해주세요.")
     
-    final_prompt = FinalVideoPrompt(**current_project["final_prompt"])
-    storyboard = await generate_detailed_storyboard_with_llm(final_prompt)
-    
-    current_project["enhanced_storyboard"] = storyboard.model_dump()
+    # 사용자 입력 저장
+    current_project["user_video_input"] = video_input.model_dump()
     
     return {
-        "message": "전문적인 상세 스토리보드가 생성되었습니다.",
+        "message": "사용자 비디오 입력이 저장되었습니다.",
+        "video_input": video_input
+    }
+
+# ==================================================================================
+"""
+3단계: LLM 기반 장면별 이미지 프롬프트 생성
+사용자 입력을 바탕으로 장면을 나누고 각 장면별 이미지 프롬프트 생성
+"""
+@app.post("/step3/generate-storyboard")
+async def generate_storyboard():
+    """3단계: LLM 기반 스토리보드 생성 (참조 이미지 없음)"""
+    if not current_project["user_video_input"]:
+        raise HTTPException(status_code=400, detail="먼저 1-2단계를 완료해주세요.")
+    
+    # 사용자 입력 가져오기
+    user_input = UserVideoInput(**current_project["user_video_input"])
+    
+    # LLM으로 장면별 이미지 프롬프트 생성
+    storyboard = await generate_scene_image_prompts_with_llm(user_input.user_description)
+    
+    # 프로젝트 상태에 저장
+    current_project["storyboard"] = storyboard.model_dump()
+    
+    return {
+        "message": "스토리보드가 성공적으로 생성되었습니다.",
         "storyboard": storyboard
     }
 
@@ -158,9 +144,6 @@ async def reset_project():
         "persona": None,
         "example_prompts": None,
         "user_video_input": None,
-        "final_prompt": None,
-        "enhanced_storyboard": None,
-        "video_prompt": None,
         "storyboard": None
     }
     

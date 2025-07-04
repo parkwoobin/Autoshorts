@@ -9,7 +9,7 @@ class VideoGenerationClient:
     def get_status(self):
         """프로젝트 상태 확인"""
         try:
-            response = requests.get(f"{self.base_url}/project/status")
+            response = requests.get(f"{self.base_url}/project")
             return response.json()
         except requests.exceptions.RequestException as e:
             return {"error": f"서버 연결 실패: {e}"}
@@ -18,7 +18,7 @@ class VideoGenerationClient:
         """1단계: 타겟 고객 정보 설정"""
         data = {
             "country": country,
-            "age_range": age_range,
+            "age_range": [age_range],  # 문자열을 리스트로 변환
             "gender": gender,
             "language": language,
             "interests": interests
@@ -30,20 +30,20 @@ class VideoGenerationClient:
         except requests.exceptions.RequestException as e:
             return {"error": f"요청 실패: {e}"}
     
-    def get_example_prompt(self):
+    def get_example_prompts(self):
         """2단계: 예시 프롬프트 가져오기"""
         try:
-            response = requests.get(f"{self.base_url}/step2/example-prompt")
+            response = requests.get(f"{self.base_url}/step2/example-prompts")
             return response.json()
         except requests.exceptions.RequestException as e:
             return {"error": f"요청 실패: {e}"}
     
-    def set_video_prompt(self, description: str):
-        """2단계: 광고 영상 프롬프트 설정"""
-        data = {"description": description}
+    def set_video_input(self, description: str):
+        """2단계: 사용자 비디오 입력 설정"""
+        data = {"user_description": description}  # 올바른 필드명으로 수정
         
         try:
-            response = requests.post(f"{self.base_url}/step2/video-prompt", json=data)
+            response = requests.post(f"{self.base_url}/step2/video-input", json=data)
             return response.json()
         except requests.exceptions.RequestException as e:
             return {"error": f"요청 실패: {e}"}
@@ -180,6 +180,12 @@ def get_user_input_step2(example_prompt):
             lines.append(line)
     
     description = "\n".join(lines)
+    
+    # 빈 입력인 경우 예시 프롬프트를 그대로 사용
+    if not description.strip():
+        print("\n💡 입력이 없어서 위의 예시 프롬프트를 그대로 사용합니다.")
+        description = example_prompt
+    
     return description
 
 def main():
@@ -211,29 +217,45 @@ def main():
         
         print("\n✅ 1단계 완료!")
         print("\n🎯 생성된 페르소나:")
-        print(result1["generated_persona"])
+        print("디버깅 - 응답 구조:", result1.keys())
+        print("디버깅 - 전체 응답:", result1)
+        
+        # 안전한 방식으로 페르소나 출력
+        if "persona" in result1 and "persona_description" in result1["persona"]:
+            print(result1["persona"]["persona_description"])
+        else:
+            print("페르소나 정보가 올바르지 않습니다.")
+            return
         
         input("\nEnter를 눌러 2단계로 진행하세요...")
         
         # 2단계: 예시 프롬프트 가져오기
-        example_result = client.get_example_prompt()
+        example_result = client.get_example_prompts()
         if "error" in example_result:
             print(f"❌ 오류: {example_result['error']}")
             return
         
         # 2단계: 사용자 프롬프트 입력
-        description = get_user_input_step2(example_result["example_prompt"])
+        description = get_user_input_step2(example_result["example_prompts"])
         
-        print("\n⏳ 광고 영상 프롬프트를 처리하는 중...")
-        result2 = client.set_video_prompt(description)
+        print("\n⏳ 사용자 비디오 입력을 처리하는 중...")
+        result2 = client.set_video_input(description)
         
         if "error" in result2:
             print(f"❌ 오류: {result2['error']}")
             return
         
         print("\n✅ 2단계 완료!")
-        print("\n📝 최종 프롬프트:")
-        print(result2["final_prompt"])
+        print("\n📝 사용자 입력:")
+        print("디버깅 - 2단계 응답 구조:", result2.keys())
+        print("디버깅 - 2단계 전체 응답:", result2)
+        
+        # 안전한 방식으로 사용자 입력 출력
+        if "video_input" in result2 and "user_description" in result2["video_input"]:
+            print(result2["video_input"]["user_description"])
+        else:
+            print("사용자 입력 정보가 올바르지 않습니다.")
+            return
         
         input("\nEnter를 눌러 3단계로 진행하세요...")
         
@@ -250,13 +272,17 @@ def main():
         print_separator()
         
         storyboard = result3["storyboard"]
-        print(f"📊 총 소요시간: {storyboard['total_duration']}초")
+        print(f"📊 총 장면 수: {len(storyboard['scenes'])}개")
+        print(f"🎭 비디오 컨셉: {storyboard.get('video_concept', 'N/A')}")
+        print(f"⏱️ 총 지속시간: {storyboard.get('total_duration', 'N/A')}초")
         print()
         
-        for scene in storyboard["scenes"]:
-            print(f"🎬 장면 {scene['scene_number']} ({scene['duration_seconds']}초)")
-            print(f"   📖 설명: {scene['description']}")
-            print(f"   🎨 비주얼: {scene['visual_elements']}")
+        for i, scene in enumerate(storyboard["scenes"], 1):
+            print(f"🎬 장면 {i}")
+            print(f"   🎨 이미지 프롬프트: {scene.get('promptText', 'N/A')}")
+            print(f"   � 비율: {scene.get('ratio', 'N/A')}")
+            print(f"   � 시드: {scene.get('seed', 'N/A')}")
+            print(f"   🖼️ 참조 이미지: {len(scene.get('referenceImages', []))}개")
             print()
         
         print("🎉 모든 단계가 완료되었습니다!")

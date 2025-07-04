@@ -36,43 +36,43 @@ async def test_scene_generation():
     
     try:
         # LLM을 통해 장면별 프롬프트 생성
-        video_storyboard = await generate_scene_image_prompts_with_llm(test_user_input)
+        storyboard_output = await generate_scene_image_prompts_with_llm(test_user_input)
         
-        print(f"✅ 성공! 전체 영상 컨셉: {video_storyboard.video_concept}")
-        print(f"📊 총 길이: {video_storyboard.total_duration}초")
-        print(f"🎭 장면 수: {len(video_storyboard.scenes)}개")
+        print(f"✅ 성공! 전체 영상 컨셉: {storyboard_output.video_concept}")
+        print(f"📊 총 길이: {storyboard_output.total_duration}초")
+        print(f"🎭 장면 수: {len(storyboard_output.scenes)}개")
         print()
         
         # 각 장면별 결과 출력
-        for i, scene in enumerate(video_storyboard.scenes, 1):
-            print(f"🎬 장면 {i}: {scene.scene_title}")
-            print(f"📝 설명: {scene.scene_description}")
-            print(f"⏱️ 길이: {scene.duration_seconds}초")
-            print(f"🖼️ 이미지 프롬프트:")
-            print(f"   - promptText: {scene.image_prompt.promptText}")
-            print(f"   - seed: {scene.image_prompt.seed}")
-            print(f"   - ratio: {scene.image_prompt.ratio}")
-            print(f"   - referenceImages: {len(scene.image_prompt.referenceImages)}개")
-            for ref in scene.image_prompt.referenceImages:
+        for i, scene in enumerate(storyboard_output.scenes, 1):
+            print(f"🎬 장면 {i}")
+            print(f"�️ 이미지 프롬프트:")
+            print(f"   - model: {scene.model}")
+            print(f"   - promptText: {scene.promptText}")
+            print(f"   - ratio: {scene.ratio}")
+            print(f"   - seed: {scene.seed}")
+            print(f"   - referenceImages: {len(scene.referenceImages)}개")
+            for ref in scene.referenceImages:
                 print(f"     * {ref.tag}: {ref.uri}")
+            print(f"   - publicFigureModeration: {scene.publicFigureModeration}")
             print("-" * 40)
         
         # JSON 형태로도 출력
         print("\n📋 완성된 JSON 구조 예시:")
-        for scene in video_storyboard.scenes[:1]:  # 첫 번째 장면만 출력
-            scene_json = {
-                "model": scene.image_prompt.model,
-                "promptText": scene.image_prompt.promptText,
-                "ratio": scene.image_prompt.ratio,
-                "referenceImages": [
-                    {"uri": ref.uri, "tag": ref.tag} 
-                    for ref in scene.image_prompt.referenceImages
-                ],
-                "seed": scene.image_prompt.seed,
-                "publicFigureModeration": scene.image_prompt.publicFigureModeration
-            }
-            import json
-            print(json.dumps(scene_json, ensure_ascii=False, indent=2))
+        scene = storyboard_output.scenes[0]  # 첫 번째 장면만 출력
+        scene_json = {
+            "model": scene.model,
+            "promptText": scene.promptText,
+            "ratio": scene.ratio,
+            "referenceImages": [
+                {"uri": ref.uri, "tag": ref.tag} 
+                for ref in scene.referenceImages
+            ],
+            "seed": scene.seed,
+            "publicFigureModeration": scene.publicFigureModeration
+        }
+        import json
+        print(json.dumps(scene_json, ensure_ascii=False, indent=2))
         
     except Exception as e:
         print(f"❌ 테스트 실패: {e}")

@@ -5,8 +5,7 @@ from typing import List
 from openai import OpenAI
 from models import (
     TargetCustomer, PersonaData, UserVideoInput,
-    ReferenceImage, SceneImagePrompt, SceneStoryboard, VideoStoryboard,
-    SceneData, VideoStoryboardData
+    ReferenceImage, SceneImagePrompt, StoryboardOutput
 )
 import os
 from dotenv import load_dotenv
@@ -153,12 +152,12 @@ async def create_ad_example(persona: PersonaData) -> str:
 # ==================================================================================
 
 # 3단계: 사용자 입력을 기반으로 장면별 이미지 생성 프롬프트 생성 (LangChain + Pydantic)
-async def generate_scene_image_prompts_with_llm(user_description: str) -> VideoStoryboard:
+async def generate_scene_image_prompts_with_llm(user_description: str) -> StoryboardOutput:
     """사용자 입력을 기반으로 LLM이 장면을 나누고 각 장면별 이미지 생성 프롬프트를 생성 (LangChain 사용)"""
     
     try:
-        # Pydantic Output Parser 설정
-        parser = PydanticOutputParser(pydantic_object=VideoStoryboardData)
+        # StoryboardOutput용 Pydantic Output Parser 설정
+        parser = PydanticOutputParser(pydantic_object=StoryboardOutput)
         
         # 프롬프트 템플릿 생성
         prompt = PromptTemplate(
@@ -166,7 +165,7 @@ async def generate_scene_image_prompts_with_llm(user_description: str) -> VideoS
 
 사용자가 제공한 광고 영상 아이디어를 분석하여:
 1. 먼저 3~6개의 장면으로 나누어 스토리를 구성
-2. 각 장면별로 AI 이미지 생성을 위한 효율적이고 균형잡힌 프롬프트를 작성
+2. 각 장면별로 {SceneImagePrompt} 구조에 맞는 이미지 생성 프롬프트를 작성
 
 프롬프트 작성 원칙:
 - 핵심 요소만 명확히, 부차 항목은 필요할 때만 추가
@@ -181,53 +180,22 @@ async def generate_scene_image_prompts_with_llm(user_description: str) -> VideoS
 5. Style (스타일): 화풍과 매체 (cinematic, commercial photography 등)
 6. Mood (무드): 감정과 분위기 (confident, friendly, energetic 등)
 
-예시: "Mid-shot of @user smiling confidently in modern office, natural window light, commercial photography style, professional mood"
-
 사용자 입력: {user_input}
-
-위 내용을 바탕으로 임팩트 있고 완성도 높은 광고 영상을 위한 장면 구성과 이미지 프롬프트를 제안해주세요.
-모든 이미지 프롬프트는 영문으로 작성하되, 장면 설명은 한국어로 작성해주세요.
 
 {format_instructions}""",
             input_variables=["user_input"],
-            partial_variables={"format_instructions": parser.get_format_instructions()}
+            partial_variables={
+                "format_instructions": parser.get_format_instructions(),
+                "SceneImagePrompt": "SceneImagePrompt"
+            }
         )
         
         # 체인 생성 및 실행
         chain = prompt | llm | parser
+        # invoke함수는 동기 ,ainvoke는 비동기
         result = await chain.ainvoke({"user_input": user_description})
         
-        # VideoStoryboardData를 VideoStoryboard로 변환
-        scenes = []
-        for scene_data in result.scenes:
-            # 이미지 프롬프트 생성
-            image_prompt = SceneImagePrompt(
-                promptText=scene_data.prompt_text,
-                seed=20250704 + scene_data.scene_number,  # 장면별로 다른 시드
-                referenceImages=[
-                    ReferenceImage(uri="https://cdn.example.com/actor_front.jpg", tag="user"),
-                    ReferenceImage(uri="https://cdn.example.com/logo_flat.png", tag="brandlogo")
-                ]
-            )
-            
-            scene = SceneStoryboard(
-                scene_number=scene_data.scene_number,
-                scene_title=scene_data.scene_title,
-                scene_description=scene_data.scene_description,
-                duration_seconds=scene_data.duration_seconds,
-                image_prompt=image_prompt
-            )
-            scenes.append(scene)
-        
-        # 전체 스토리보드 생성
-        user_input = UserVideoInput(user_description=user_description)
-        
-        return VideoStoryboard(
-            user_input=user_input,
-            scenes=scenes,
-            total_duration=result.total_duration,
-            video_concept=result.video_concept
-        )
+        return result
             
     except Exception as e:
         print(f"⚠️ LangChain LLM 호출 실패 (장면 프롬프트 생성): {e}")
