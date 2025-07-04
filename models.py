@@ -22,50 +22,43 @@ class UserVideoInput(BaseModel):
     selected_themes: List[str] = []  # 선택한 테마들
     additional_requirements: str = ""  # 추가 요구사항
 
-# LLM 생성 최종 프롬프트 (개선)
-class FinalVideoPrompt(BaseModel):
-    persona: PersonaData
+
+# 이미지 생성용 데이터 구조
+class ReferenceImage(BaseModel):
+    uri: str
+    tag: str
+# 스토리보드 생성을 위한 프롬프트 구조 설정 
+class SceneImagePrompt(BaseModel):
+    model: str = "gen4_image"  # 기본값
+    promptText: str
+    ratio: str = "1280:720"  # 기본값 5크레딧 720p, 1920:1080 8크레딧 1080p  
+    referenceImages: List[ReferenceImage] = [] # 기본값은 빈 리스트
+    seed: int # 시드값을 잘 생각해되는게 시드값을 사용하면 동일한 프롬프트로도 매번 다른 이미지를 생성할 수 있음
+    publicFigureModeration: str = "auto"  # 기본값, low와,off가 있음
+
+class SceneData(BaseModel):
+    """단일 장면 데이터"""
+    scene_number: int
+    scene_title: str
+    scene_description: str
+    duration_seconds: int
+    prompt_text: str
+
+class VideoStoryboardData(BaseModel):
+    """LLM 출력용 비디오 스토리보드 데이터"""
+    video_concept: str
+    total_duration: int
+    scenes: List[SceneData]
+
+class SceneStoryboard(BaseModel):
+    scene_number: int
+    scene_title: str
+    scene_description: str
+    duration_seconds: int
+    image_prompt: SceneImagePrompt
+
+class VideoStoryboard(BaseModel):
     user_input: UserVideoInput
-    optimized_prompt: str  # LLM이 최적화한 최종 프롬프트
-    target_duration: int  # 목표 영상 길이(초)
-    key_scenes: List[str]  # 주요 장면 리스트
-
-# LLM 생성 상세 장면 (대폭 개선)
-class DetailedStoryboardScene(BaseModel):
-    scene_number: int
-    title: str  # 장면 제목
-    description: str  # 상세 장면 설명
-    visual_elements: str  # 시각적 요소
-    audio_elements: str  # 오디오 요소 (BGM, 효과음, 내레이션)
-    camera_work: str  # 카메라 워크 및 앵글
-    lighting: str  # 조명 설정
-    props_and_costumes: List[str]  # 필요한 소품 및 의상
-    dialogue_or_narration: str = ""  # 대사 또는 내레이션
-    duration_seconds: int
-    transition_to_next: str = ""  # 다음 장면으로의 전환 방식
-
-# 최종 스토리보드 (개선)
-class EnhancedStoryboard(BaseModel):
-    final_prompt: FinalVideoPrompt
-    scenes: List[DetailedStoryboardScene]
+    scenes: List[SceneStoryboard]
     total_duration: int
-    production_notes: str  # 제작 시 주의사항
-    budget_estimate: str = ""  # 예상 제작비용 범위
-    target_platforms: List[str]  # 최적화된 플랫폼들
-
-# 기존 호환성을 위한 간단한 구조도 유지
-class VideoPrompt(BaseModel):
-    persona: PersonaData
-    description: str
-    final_prompt: str
-
-class StoryboardScene(BaseModel):
-    scene_number: int
-    description: str
-    visual_elements: str
-    duration_seconds: int
-
-class Storyboard(BaseModel):
-    video_prompt: VideoPrompt
-    scenes: List[StoryboardScene]
-    total_duration: int
+    video_concept: str
