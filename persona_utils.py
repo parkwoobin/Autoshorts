@@ -15,6 +15,7 @@ import asyncio
 # 출력 구조 정확하게 나오게 하기 위한 outputparser
 from langchain.output_parsers import PydanticOutputParser
 from langchain.prompts import PromptTemplate
+# OpenAI 채팅 모델용 Runnable 블록 - Runnable 규격 덕분에 invoke / ainvoke / batch / stream이 기본 탑재되어, 다른 LangChain 구성요소와 바로 이어 붙여 쓸 수 있음
 from langchain_openai import ChatOpenAI
 # .env 파일에서 환경 변수 로드
 load_dotenv()
@@ -26,63 +27,126 @@ client = OpenAI(api_key=OpenAI_API_KEY)
 # LangChain ChatOpenAI 초기화
 llm = ChatOpenAI(
     model="gpt-4.1-nano-2025-04-14",
-    temperature=0.7,
     openai_api_key=OpenAI_API_KEY
 )
 
-# 다 구현하고 나중에 수정 -> 트렌드 데이터 API 호출 부분
-async def trend_data_api(country: str) -> dict:
+# 외부 트렌드 데이터베이스 연동 인터페이스
+async def get_trend_data(country: str, gender: str, age_range: List[str], interests: List[str]) -> dict:
     """
-    외부 API를 통해 특정 국가,문화 등의 최신 트렌드 데이터를 가져옴
-    실제 구현 시에는 외부 API 호출 로직으로 구현
+    외부 트렌드 데이터베이스에서 타겟 고객에 맞는 트렌드 데이터를 가져오는 인터페이스
+    
+    Args:
+        country: 국가 정보
+        gender: 성별
+        age_range: 연령대 리스트 
+        interests: 관심사 리스트
+        
+    Returns:
+        dict: 트렌드 데이터베이스에서 가져온 트렌드 데이터
+        
+    Note:
+        현재는 빈 dict 반환. 외부 트렌드 데이터베이스 API 연동 시 이 함수 내용만 교체하면 됨.
     """
+    print(f"📊 트렌드 데이터베이스 연동 대기 중... (타겟: {country} {gender} {age_range} {interests})")
+    
+    # TODO: 외부 트렌드 데이터베이스 API 호출 로직으로 교체
+    # 예시: 
+    # async with httpx.AsyncClient() as client:
+    #     response = await client.post("https://trend-db-api.com/query", json={
+    #         "country": country, "gender": gender, "age_range": age_range, "interests": interests
+    #     })
+    #     return response.json()
+    
+    # 현재는 빈 데이터 반환 (LLM이 자체 판단으로 페르소나 생성하도록)
+    return {}
 # ==================================================================================
 
-# 1단계: 타겟 고객 정보로 페르소나 생성
-async def generate_persona_with_llm(customer: TargetCustomer) -> PersonaData:
-    """LLM을 사용해 타겟 고객의 페르소나를 생성"""
+"""
+    사용자 입력 1단계 : LangChain과 트렌드 데이터를 활용한 정교한 타겟 페르소나 생성
+    1. 외부 트렌드 데이터베이스에서 데이터 조회
+    2. LangChain OutputParser로 구조화된 페르소나 생성
+    3. 트렌드 데이터 없을 시 LLM이 자체 판단으로 페르소나 생성
+"""
+async def generate_persona(customer: TargetCustomer) -> PersonaData:
     age_ranges_str = ", ".join(customer.age_range)
     interests_str = ", ".join(customer.interests)
     
-    try:
-        completion = client.chat.completions.create(
-            model="gpt-4.1-nano-2025-04-14",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "당신은 마케팅 전문가이자 소비자 행동 분석가입니다. 제공된 타겟 고객 정보에만 기반하여, 상세한 페르소나를 제안해주세요."
-                },
-                {
-                    "role": "user", 
-                    "content": f"""
-다음 타겟 고객 정보를 분석해주세요:
-- 국가: {customer.country}
-- 연령대: {age_ranges_str}
-- 성별: {customer.gender}
-- 언어: {customer.language}
-- 관심사: {interests_str}
+    # 1단계: 외부 트렌드 데이터베이스에서 데이터 조회
+    print("📊 트렌드 데이터베이스에서 데이터를 조회합니다...") # 디버깅용
+    trend_data = await get_trend_data(
+        country=customer.country,
+        gender=customer.gender,
+        age_range=customer.age_range,
+        interests=customer.interests
+    )
+    
+    # 트렌드 데이터를 문자열로 포매팅 (빈 데이터인 경우 "데이터 없음" 표시)
+    import json
+    if trend_data:
+        trend_data_str = json.dumps(trend_data, indent=2, ensure_ascii=False)
+        print("📈 트렌드 데이터 조회 완료")
+    else:
+        trend_data_str = "현재 트렌드 데이터가 없습니다. 전문 지식을 바탕으로 분석해주세요."
+        print("📈 트렌드 데이터 없음 - LLM 자체 판단으로 진행")
+    
+    # 2단계: LangChain OutputParser 설정
+    parser = PydanticOutputParser(pydantic_object=PersonaData)
+    
+    # 3단계: 프롬프트 템플릿 정의
+    prompt = PromptTemplate(
+        template="""
+당신은 최신 트렌드에 정통한 전문 마케터이자 소비자 심리 분석가입니다.
+주어진 타겟 고객 정보와 트렌드 데이터를 종합 분석하여, 광고 캠페인에 직접 활용할 수 있는 구체적이고 살아있는 페르소나를 생성해주세요.
 
-다음 형식으로 답변해주세요:
+### 타겟 고객 정보
+- 국가/문화: {country}
+- 연령대: {age_ranges}
+- 성별: {gender}
+- 언어/문화권: {language}
+- 관심사: {interests}
 
-**페르소나 프로필:**
-(이 타겟의 라이프스타일, 가치관, 소비 패턴, 미디어 소비 습관 등을 상세히 설명)
+### 트렌드 데이터
+{trend_data}
 
-한국어로 작성해주세요.
-"""
-                }
-            ]
-        )
-        # LLM 응답에서 답변만 추출
-        llm_response = completion.choices[0].message.content
-        
-        return PersonaData(
-            target_customer=customer,
-            persona_description=llm_response,
-            marketing_insights=""  # 마케팅 인사이트는 트렌드 데이터와 결합하여 생성할 예정
-        )
-        
-    except Exception as e:
-        print(f"⚠️ OpenAI API 호출 실패 (페르소나 생성): {e}")
+### 생성 지침
+**중요**: 트렌드 데이터가 비어있거나 부족한 경우, 당신의 전문 지식을 바탕으로 해당 타겟 고객층의 일반적인 특성을 분석하여 페르소나를 구성하세요.
+
+응답은 다음 두 부분으로 명확히 분리해서 작성해주세요:
+
+1. **persona_description**: 구체적인 페르소나 설명
+   - 이름, 나이, 직업 등 기본 정보
+   - 라이프스타일과 가치관
+   - 소비 패턴과 미디어 이용 습관
+   - 일상적인 행동과 관심사
+
+2. **marketing_insights**: 이 페르소나를 대상으로 한 마케팅 전략
+   - 효과적인 광고 메시지 방향성
+   - 선호하는 광고 형식
+   - 구매 결정 요인과 동기
+   - 주의해야 할 마케팅 포인트
+
+{format_instructions}
+        """,
+        input_variables=["country", "age_ranges", "gender", "language", "interests", "trend_data"],
+        partial_variables={"format_instructions": parser.get_format_instructions()}
+    )
+    
+    # 4단계: LangChain 체인 구성 및 실행
+    chain = prompt | llm | parser
+    
+    print("🤖 LangChain을 통한 페르소나 생성 중...")
+    result = await chain.ainvoke({
+        # 타겟 고객 정보 전달
+        "country": customer.country,
+        "age_ranges": age_ranges_str,
+        "gender": customer.gender,
+        "language": customer.language,
+        "interests": interests_str,
+        "trend_data": trend_data_str
+    })
+    
+    print("✅ 페르소나 생성 완료")
+    return result
 
 # ==================================================================================
 # LLM 기반 광고 영상 예시 프롬프트 생성 함수

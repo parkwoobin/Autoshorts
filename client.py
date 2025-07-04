@@ -11,7 +11,7 @@ from models import (
 
 # LLM 유틸리티 함수들을 별도 파일에서 import
 from persona_utils import (
-    generate_persona_with_llm, create_ad_example,
+    generate_persona, create_ad_example,
     generate_scene_image_prompts_with_llm, generate_images_with_runway,
     create_image_with_runway
 )
@@ -38,20 +38,17 @@ async def root():
 # ==================================================================================
 
 """
-1단계 : 타겟 고객 정보 설정 및 LLM을 통한 페르소나 생성
+1단계 : LLM이 타겟 고객 정보와 최신 트렌드 데이터를 종합적으로 분석하여, 맞춤형 페르소나를 생성
 단계별 상세 과정 이해하기
 사용자 정보 POST 요청 → JSON 파싱(python dict로 변환) : 이 과정에서 데이터 유효성 검사 및 변환이 수행됨
-→ 객체 생성(데이터 구조 생성) → 함수 인자로 넣어서 객체를 호출함
+→ 객체 생성(데이터 구조 생성) → 함수 인자로 넣어서 객체를 호출함 (customer)
 """
 @app.post("/step1/target-customer")
 # 사용자 정보 POST 요청시 데이터 구조 검증 + 객체 생성 수행 -> customer변수에 요청된 데이터 저장
 async def set_target_customer_enhanced(customer: TargetCustomer):
     # LLM으로 페르소나 생성
-    persona_data = await generate_persona_with_llm(customer)
-    """
-    현재 프로젝트 상태에 타겟 고객과 페르소나 정보 저장
-    pydantic 객체를 파이썬 딕셔너리로 변환하는 함수 model_dump() : 데이터베이스에 데이터만 저장하기 위함, pydantic객체는 유효성 검사가 포함된 복잡한 구조임
-    """
+    persona_data = await generate_persona(customer)
+    # model_dump() : pydantic 객체를 파이썬 딕셔너리로 변환하는 함수 (데이터베이스에 데이터만 저장하기 위함, pydantic객체는 유효성 검사가 포함된 복잡한 구조임)
     current_project["target_customer"] = customer.model_dump()
     current_project["persona"] = persona_data.model_dump()
     

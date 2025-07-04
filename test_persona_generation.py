@@ -1,6 +1,6 @@
 import asyncio
 from models import TargetCustomer
-from persona_utils import generate_persona_with_llm, create_ad_example
+from persona_utils import generate_persona, create_ad_example
 import os
 
 # --- 중요 ---
@@ -35,12 +35,14 @@ async def main():
     try:
         # 2. STEP 1: LLM으로 페르소나 생성
         print("\n🤖 STEP 1: LLM을 호출하여 페르소나를 생성합니다... (잠시만 기다려주세요)")
-        persona_data = await generate_persona_with_llm(sample_customer)
+        persona_data = await generate_persona(sample_customer)
 
         print("\n✅ 페르소나 생성 성공!")
         print("="*60)
         print("\n**📝 생성된 페르소나:**\n")
         print(persona_data.persona_description)
+        print("\n**📊 마케팅 인사이트:**\n")
+        print(persona_data.marketing_insights)
         print("\n" + "="*60)
 
         # 3. STEP 2: 생성된 페르소나로 광고 컨셉 예시 생성

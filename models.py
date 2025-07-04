@@ -13,8 +13,8 @@ class TargetCustomer(BaseModel):
 # LLM 생성 페르소나 데이터 
 class PersonaData(BaseModel):
     target_customer: TargetCustomer
-    persona_description: str  # LLM이 생성한 페르소나 설명
-    marketing_insights: str = ""  # 타겟 고객 마케팅 인사이트
+    persona_description: str  # LLM이 생성한 페르소나 설명 (순수 페르소나 내용만)
+    marketing_insights: str  # 타겟 고객 마케팅 인사이트 (분리된 마케팅 전략)
 
 # 사용자 입력 영상 프롬프트 
 class UserVideoInput(BaseModel):
