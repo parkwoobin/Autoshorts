@@ -1,6 +1,9 @@
 """
 영상 생성을 위한 데이터 모델들
-"""
+    # BGM 설정
+    BGM_FOLDER = "bgm"  # BGM 폴더 경로
+    BGM_VOLUME = -5  # BGM 음량 조절 (dB)
+    BGM_ENABLED = False  # BGM 사용 여부 (임시로 비활성화)"""
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -21,6 +24,11 @@ class VideoConfig:
     # 코덱 설정
     VIDEO_CODEC = 'libx264'
     AUDIO_CODEC = 'aac'
+    
+    # BGM 설정
+    BGM_FOLDER = "bgm"  # BGM 폴더 경로
+    BGM_VOLUME = -10  # BGM 음량 조절 (dB)
+    BGM_ENABLED = True  # BGM 사용 여부
 
 class VideoGenerationInput(BaseModel):
     """영상 생성 요청 데이터"""
@@ -57,6 +65,8 @@ class VideoMergeRequest(BaseModel):
     video_urls: List[str]  # 합칠 영상 URL 목록
     output_filename: Optional[str] = None  # 출력 파일명 (기본값: 타임스탬프)
     transition_duration: float = 1.0  # 트랜지션 효과 시간 (초)
+    enable_bgm: bool = True  # BGM 사용 여부
+    bgm_volume: float = -5.0  # BGM 음량 조절 (dB)
 
 class VideoMergeResult(BaseModel):
     """영상 합치기 결과"""

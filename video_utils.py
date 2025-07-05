@@ -4,13 +4,13 @@
 import asyncio
 import os
 from typing import List, Optional
-from video_models import VideoGenerationResult
+from video_models import VideoGenerationResult, VideoConfig
 
 async def create_video_with_runway(
     image_url: str,
-    duration: int = 5,  # 성공한 duration 설정
-    resolution: str = "768:1280",  # 성공한 해상도 설정
-    model: str = "gen3a_turbo",  # 성공한 모델 설정
+    duration: int = VideoConfig.DEFAULT_DURATION,
+    resolution: str = f"{VideoConfig.RESOLUTION_WIDTH}:{VideoConfig.RESOLUTION_HEIGHT}",
+    model: str = "gen4_image",  # 성공한 모델 설정
     seed: Optional[int] = None,
     api_key: str = None
 ) -> str:
@@ -20,7 +20,7 @@ async def create_video_with_runway(
     Args:
         image_url: 소스 이미지 URL
         duration: 영상 길이 (초)
-        resolution: 해상도 (기본값: 720p)
+        resolution: 해상도 (기본값: 768x1280)
         model: Runway 영상 모델
         seed: 시드값 (선택사항)
         api_key: Runway API 키
@@ -142,8 +142,8 @@ async def create_video_with_runway(
 
 async def generate_videos_from_images(
     image_urls: List[str],
-    duration_per_scene: int = 10,
-    resolution: str = "1280:720",
+    duration_per_scene: int = VideoConfig.DEFAULT_DURATION,
+    resolution: str = f"{VideoConfig.RESOLUTION_WIDTH}:{VideoConfig.RESOLUTION_HEIGHT}",
     api_key: str = None
 ) -> List[VideoGenerationResult]:
     """
