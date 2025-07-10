@@ -290,12 +290,206 @@ def add_video_features_to_server():
                     detail=f"6-1단계 사용자 영상 랜덤 트랜지션 합치기 실패: {str(e)}"  # 구체적인 에러 메시지 포함
                 )
 
+        # === TTS + 비디오 합치기 API 엔드포인트 ===
+        @app.post("/video/merge-with-tts")  # POST 요청으로 TTS 포함 비디오 합치기
+        async def merge_videos_with_tts(request: dict):  # TTS 포함 비디오 합치기 요청 처리
+            """비디오들에 TTS 음성을 추가한 후 트랜지션과 함께 합치기"""
+            try:
+                # 요청 데이터 추출
+                video_urls = request.get("video_urls", [])  # 비디오 URL 리스트
+                text_list = request.get("text_list", [])  # 각 비디오에 대응하는 텍스트 리스트
+                transition_type = request.get("transition_type", "fade")  # 트랜지션 타입 (기본값: fade)
+                voice_id = request.get("voice_id")  # 음성 ID (선택사항)
+                tts_volume = request.get("tts_volume", 0.8)  # TTS 볼륨 (기본값: 0.8)
+                video_volume = request.get("video_volume", 0.3)  # 원본 비디오 볼륨 (기본값: 0.3)
+                
+                # 입력 검증
+                if not video_urls:
+                    raise HTTPException(status_code=400, detail="video_urls가 필요합니다.")
+                
+                if not text_list:
+                    raise HTTPException(status_code=400, detail="text_list가 필요합니다.")
+                
+                if len(video_urls) != len(text_list):
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="video_urls와 text_list의 개수가 일치하지 않습니다."
+                    )
+                
+                print(f"🎙️ TTS + 비디오 합치기 요청 처리 시작...")
+                print(f"   비디오 개수: {len(video_urls)}")
+                print(f"   트랜지션: {transition_type}")
+                print(f"   음성 ID: {voice_id or '기본값'}")
+                
+                # VideoTransitionMerger 인스턴스 생성
+                merger = create_merger_instance()
+                
+                # ElevenLabs API 키 확인
+                from tts_utils import get_elevenlabs_api_key
+                api_key = get_elevenlabs_api_key()
+                if not api_key:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail="ElevenLabs API 키가 설정되지 않았습니다. .env 파일의 ELEVNLABS_API_KEY를 확인해주세요."
+                    )
+                
+                # TTS + 비디오 합치기 실행
+                output_filename = generate_output_filename(f"merged_tts_{transition_type}")
+                output_path = await merger.merge_videos_with_tts(
+                    video_urls=video_urls,
+                    text_list=text_list,
+                    transition_type=transition_type,
+                    voice_id=voice_id,
+                    tts_volume=tts_volume,
+                    video_volume=video_volume,
+                    api_key=api_key,
+                    output_filename=output_filename
+                )
+                
+                # 성공 응답 생성
+                video_url = f"http://localhost:8000/static/videos/{os.path.basename(output_path)}"
+                
+                return create_video_response(
+                    success=True,
+                    message=f"TTS가 추가된 {len(video_urls)}개 비디오 합치기 완료!",
+                    video_url=video_url,
+                    details={
+                        "video_count": len(video_urls),
+                        "text_count": len(text_list),
+                        "transition_type": transition_type,
+                        "transition_description": get_transition_description(transition_type),
+                        "voice_id": voice_id or "기본값 (Rachel)",
+                        "tts_volume": tts_volume,
+                        "video_volume": video_volume,
+                        "output_filename": os.path.basename(output_path)
+                    }
+                )
+                
+            except HTTPException:
+                raise  # HTTP 예외는 그대로 전달
+            except Exception as e:
+                print(f"❌ TTS 비디오 합치기 실패: {e}")
+                raise HTTPException(status_code=500, detail=f"TTS 비디오 합치기 실패: {str(e)}")
+
+        @app.post("/video/add-tts")  # POST 요청으로 단일 비디오에 TTS 추가
+        async def add_tts_to_single_video(request: dict):  # 단일 비디오에 TTS 추가 요청 처리
+            """단일 비디오에 TTS 음성 추가"""
+            try:
+                # 요청 데이터 추출
+                video_url = request.get("video_url")  # 비디오 URL
+                text = request.get("text")  # TTS로 변환할 텍스트
+                voice_id = request.get("voice_id")  # 음성 ID (선택사항)
+                tts_volume = request.get("tts_volume", 0.8)  # TTS 볼륨
+                video_volume = request.get("video_volume", 0.3)  # 원본 비디오 볼륨
+                
+                # 입력 검증
+                if not video_url:
+                    raise HTTPException(status_code=400, detail="video_url이 필요합니다.")
+                
+                if not text:
+                    raise HTTPException(status_code=400, detail="text가 필요합니다.")
+                
+                print(f"🎙️ 단일 비디오에 TTS 추가 요청 처리...")
+                print(f"   비디오: {video_url}")
+                print(f"   텍스트: {text[:100]}{'...' if len(text) > 100 else ''}")
+                
+                # VideoTransitionMerger 인스턴스 생성
+                merger = create_merger_instance()
+                
+                # ElevenLabs API 키 확인
+                from tts_utils import get_elevenlabs_api_key
+                api_key = get_elevenlabs_api_key()
+                if not api_key:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail="ElevenLabs API 키가 설정되지 않았습니다."
+                    )
+                
+                # 비디오 다운로드
+                video_path = merger._download_video(video_url, "temp_video_for_tts.mp4")
+                
+                # TTS 추가
+                output_filename = generate_output_filename("video_with_tts")
+                output_path = await merger.add_tts_to_video(
+                    video_path=video_path,
+                    text=text,
+                    voice_id=voice_id,
+                    tts_volume=tts_volume,
+                    video_volume=video_volume,
+                    api_key=api_key,
+                    output_filename=output_filename
+                )
+                
+                # 임시 파일 정리
+                try:
+                    os.remove(video_path)
+                except:
+                    pass
+                
+                # 성공 응답 생성
+                result_video_url = f"http://localhost:8000/static/videos/{os.path.basename(output_path)}"
+                
+                return create_video_response(
+                    success=True,
+                    message="TTS가 추가된 비디오 생성 완료!",
+                    video_url=result_video_url,
+                    details={
+                        "original_video": video_url,
+                        "text": text,
+                        "voice_id": voice_id or "기본값 (Rachel)",
+                        "tts_volume": tts_volume,
+                        "video_volume": video_volume,
+                        "output_filename": os.path.basename(output_path)
+                    }
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                print(f"❌ 단일 비디오 TTS 추가 실패: {e}")
+                raise HTTPException(status_code=500, detail=f"TTS 추가 실패: {str(e)}")
+
+        @app.get("/tts/voices")  # GET 요청으로 사용 가능한 TTS 음성 목록 조회
+        async def get_available_tts_voices():  # TTS 음성 목록 조회 요청 처리
+            """사용 가능한 TTS 음성 목록 조회"""
+            try:
+                from tts_utils import TTSConfig, get_elevenlabs_api_key, get_available_voices
+                
+                # 기본 음성 목록 (하드코딩된 목록)
+                basic_voices = TTSConfig.VOICES
+                
+                # API 키가 있으면 실제 음성 목록도 가져오기 시도
+                api_key = get_elevenlabs_api_key()
+                api_voices = None
+                
+                if api_key:
+                    try:
+                        api_voices_data = await get_available_voices(api_key)
+                        api_voices = api_voices_data.get("voices", [])
+                    except Exception as e:
+                        print(f"⚠️ API 음성 목록 조회 실패: {e}")
+                
+                return {
+                    "success": True,
+                    "basic_voices": basic_voices,
+                    "api_voices": api_voices,
+                    "default_voice": TTSConfig.DEFAULT_VOICE_ID,
+                    "message": "음성 목록 조회 완료"
+                }
+                
+            except Exception as e:
+                print(f"❌ 음성 목록 조회 실패: {e}")
+                raise HTTPException(status_code=500, detail=f"음성 목록 조회 실패: {str(e)}")
+
         print("✅ 비디오 기능 추가 완료!")  # 모든 기능 추가 완료 알림
         print("📋 추가된 API 엔드포인트:")  # 추가된 엔드포인트 목록 출력 시작
         print("   - GET  /video/status (상태 확인)")  # 상태 확인 API
         print("   - POST /video/generate-videos (5단계: Runway API 영상 생성)")  # AI 영상 생성 API
         print("   - POST /video/merge-with-transitions (6단계: 랜덤 트랜지션 합치기)")  # 생성된 영상 합치기 API
         print("   - POST /video/merge-user-videos (6-1단계: 사용자 영상 랜덤 트랜지션 합치기)")  # 사용자 영상 합치기 API
+        print("   - POST /video/merge-with-tts (TTS 포함 비디오 합치기)")  # TTS 포함 비디오 합치기 API
+        print("   - POST /video/add-tts (단일 비디오에 TTS 추가)")  # 단일 비디오 TTS 추가 API
+        print("   - GET  /tts/voices (사용 가능한 TTS 음성 목록 조회)")  # TTS 음성 목록 조회 API
         
         return app  # 설정이 완료된 FastAPI app 반환
         
@@ -331,6 +525,9 @@ def start_video_server():
     print("   🎬 6단계 랜덤 트랜지션 합치기: POST /video/merge-with-transitions")  # 생성된 영상 합치기 API 안내
     print("   📱 사용자 영상 합치기: POST /video/merge-custom")  # 사용자 영상 합치기 API 안내
     print("   🎲 6-1단계 사용자 영상 랜덤 트랜지션: POST /video/merge-user-videos")  # 사용자 영상 랜덤 트랜지션 API 안내
+    print("   🎤 TTS 포함 비디오 합치기: POST /video/merge-with-tts")  # TTS 포함 비디오 합치기 API 안내
+    print("   🔊 단일 비디오 TTS 추가: POST /video/add-tts")  # 단일 비디오 TTS 추가 API 안내
+    print("   📜 사용 가능한 TTS 음성 목록 조회: GET /tts/voices")  # TTS 음성 목록 조회 API 안내
     
     # uvicorn ASGI 서버로 FastAPI 앱 실행
     uvicorn.run(

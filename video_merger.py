@@ -12,9 +12,10 @@ import httpx
 from transitions import VideoTransitions
 from video_models import VideoConfig
 from bgm_utils import BGMManager
+from tts_utils import create_tts_audio, create_multiple_tts_audio, get_elevenlabs_api_key, TTSResult
 
 try:
-    from moviepy.editor import VideoFileClip, concatenate_videoclips
+    from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip, concatenate_audioclips
     MOVIEPY_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ MoviePy import 실패: {e}")
@@ -397,3 +398,218 @@ class VideoTransitionMerger:
                 if filename.startswith(pattern) and filename.endswith('.mp4'):
                     temp_files.append(os.path.join(self.temp_dir, filename))
         return temp_files
+    
+    async def add_tts_to_video(
+        self,
+        video_path: str,  # 비디오 파일 경로
+        text: str,  # TTS로 변환할 텍스트
+        voice_id: str = None,  # 음성 ID (None이면 기본값 사용)
+        tts_volume: float = 0.8,  # TTS 음성 볼륨 (0.0-1.0)
+        video_volume: float = 0.3,  # 원본 비디오 볼륨 (0.0-1.0)
+        api_key: str = None,  # ElevenLabs API 키
+        output_filename: str = None  # 출력 파일명
+    ) -> str:
+        """
+        비디오에 TTS 음성을 추가하여 새로운 비디오 생성
+        
+        Args:
+            video_path: 원본 비디오 파일 경로
+            text: TTS로 변환할 텍스트
+            voice_id: 사용할 음성 ID
+            tts_volume: TTS 음성 볼륨
+            video_volume: 원본 비디오 볼륨
+            api_key: ElevenLabs API 키
+            output_filename: 출력 파일명
+            
+        Returns:
+            str: 생성된 비디오 파일 경로
+        """
+        from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip
+        
+        if not api_key:
+            api_key = get_elevenlabs_api_key()
+            if not api_key:
+                raise ValueError("ElevenLabs API 키가 필요합니다.")
+        
+        print(f"🎙️ 비디오에 TTS 음성 추가 시작...")
+        print(f"   비디오: {os.path.basename(video_path)}")
+        print(f"   텍스트: {text[:100]}{'...' if len(text) > 100 else ''}")
+        
+        try:
+            # 1단계: TTS 오디오 생성
+            tts_result = await create_tts_audio(
+                text=text,
+                voice_id=voice_id,
+                api_key=api_key,
+                output_dir=self.temp_dir
+            )
+            
+            if not tts_result.success:
+                raise Exception(f"TTS 생성 실패: {tts_result.error}")
+            
+            # 2단계: 비디오 클립 로드
+            video_clip = VideoFileClip(video_path)
+            print(f"   비디오 길이: {video_clip.duration:.2f}초")
+            
+            # 3단계: TTS 오디오 클립 로드
+            tts_audio_clip = AudioFileClip(tts_result.audio_file_path)
+            print(f"   TTS 길이: {tts_audio_clip.duration:.2f}초")
+            
+            # 4단계: 오디오 볼륨 조정
+            tts_audio_clip = tts_audio_clip.volumex(tts_volume)
+            
+            # 5단계: 원본 비디오 오디오와 TTS 오디오 합성
+            if video_clip.audio is not None:
+                # 원본 비디오 오디오 볼륨 조정
+                original_audio = video_clip.audio.volumex(video_volume)
+                
+                # TTS 오디오와 비디오 길이 맞추기
+                if tts_audio_clip.duration > video_clip.duration:
+                    # TTS가 더 길면 비디오 길이에 맞춰 자르기
+                    tts_audio_clip = tts_audio_clip.subclip(0, video_clip.duration)
+                elif tts_audio_clip.duration < video_clip.duration:
+                    # TTS가 더 짧으면 침묵으로 패딩
+                    from moviepy.audio.AudioClip import AudioClip
+                    silence_duration = video_clip.duration - tts_audio_clip.duration
+                    silence = AudioClip(lambda t: 0, duration=silence_duration)
+                    tts_audio_clip = concatenate_audioclips([tts_audio_clip, silence])
+                
+                # 오디오 합성
+                composite_audio = CompositeAudioClip([original_audio, tts_audio_clip])
+            else:
+                # 원본 비디오에 오디오가 없으면 TTS만 사용
+                composite_audio = tts_audio_clip
+                
+                # 비디오 길이에 맞춰 조정
+                if tts_audio_clip.duration > video_clip.duration:
+                    composite_audio = tts_audio_clip.subclip(0, video_clip.duration)
+                elif tts_audio_clip.duration < video_clip.duration:
+                    from moviepy.audio.AudioClip import AudioClip
+                    silence_duration = video_clip.duration - tts_audio_clip.duration
+                    silence = AudioClip(lambda t: 0, duration=silence_duration)
+                    composite_audio = concatenate_audioclips([tts_audio_clip, silence])
+            
+            # 6단계: 새로운 비디오 생성
+            final_video = video_clip.set_audio(composite_audio)
+            
+            # 7단계: 출력 파일명 생성
+            if not output_filename:
+                timestamp = int(time.time() * 1000)
+                output_filename = f"video_with_tts_{timestamp}.mp4"
+            
+            output_path = os.path.join(self.temp_dir, output_filename)
+            
+            # 8단계: 비디오 저장
+            print(f"💾 TTS가 추가된 비디오 저장 중...")
+            final_video.write_videofile(
+                output_path,
+                fps=VideoConfig.OUTPUT_FPS,
+                codec='libx264',
+                audio_codec='aac',
+                verbose=False,
+                logger=None
+            )
+            
+            # 9단계: 리소스 정리
+            video_clip.close()
+            tts_audio_clip.close()
+            final_video.close()
+            
+            # TTS 임시 파일 삭제
+            try:
+                os.remove(tts_result.audio_file_path)
+            except:
+                pass
+            
+            print(f"✅ TTS가 추가된 비디오 생성 완료: {output_filename}")
+            return output_path
+            
+        except Exception as e:
+            print(f"❌ TTS 비디오 생성 실패: {e}")
+            raise
+
+    async def merge_videos_with_tts(
+        self,
+        video_urls: List[str],  # 비디오 URL 리스트
+        text_list: List[str],  # 각 비디오에 대응하는 텍스트 리스트
+        transition_type: str = "fade",  # 트랜지션 타입
+        voice_id: str = None,  # 음성 ID
+        tts_volume: float = 0.8,  # TTS 볼륨
+        video_volume: float = 0.3,  # 원본 비디오 볼륨
+        api_key: str = None,  # ElevenLabs API 키
+        output_filename: str = None  # 출력 파일명
+    ) -> str:
+        """
+        여러 비디오를 다운로드하고 각각에 TTS를 추가한 후 트랜지션과 함께 합치기
+        
+        Args:
+            video_urls: 비디오 URL 리스트
+            text_list: 각 비디오에 대응하는 텍스트 리스트
+            transition_type: 트랜지션 타입
+            voice_id: 사용할 음성 ID
+            tts_volume: TTS 음성 볼륨
+            video_volume: 원본 비디오 볼륨
+            api_key: ElevenLabs API 키
+            output_filename: 출력 파일명
+            
+        Returns:
+            str: 생성된 최종 비디오 파일 경로
+        """
+        if len(video_urls) != len(text_list):
+            raise ValueError("비디오 URL 개수와 텍스트 개수가 일치하지 않습니다.")
+        
+        if not api_key:
+            api_key = get_elevenlabs_api_key()
+            if not api_key:
+                raise ValueError("ElevenLabs API 키가 필요합니다.")
+        
+        print(f"🎬 {len(video_urls)}개 비디오에 TTS 추가 후 합치기 시작...")
+        
+        try:
+            # 1단계: 모든 비디오 다운로드
+            video_paths = []
+            for i, video_url in enumerate(video_urls):
+                print(f"📥 비디오 {i+1} 다운로드 중...")
+                video_path = self._download_video(video_url, f"video_for_tts_{i}.mp4")
+                video_paths.append(video_path)
+            
+            # 2단계: 각 비디오에 TTS 추가
+            tts_video_paths = []
+            for i, (video_path, text) in enumerate(zip(video_paths, text_list)):
+                print(f"🎙️ 비디오 {i+1}에 TTS 추가 중...")
+                tts_video_path = await self.add_tts_to_video(
+                    video_path=video_path,
+                    text=text,
+                    voice_id=voice_id,
+                    tts_volume=tts_volume,
+                    video_volume=video_volume,
+                    api_key=api_key,
+                    output_filename=f"video_with_tts_{i}.mp4"
+                )
+                tts_video_paths.append(tts_video_path)
+            
+            # 3단계: TTS가 추가된 비디오들을 트랜지션과 함께 합치기
+            print(f"🔗 {len(tts_video_paths)}개 비디오를 트랜지션과 함께 합치는 중...")
+            
+            # 파일 경로를 URL로 변환 (기존 merge_videos 메서드 호환)
+            tts_video_urls = [f"file://{path}" for path in tts_video_paths]
+            
+            final_video_path = self.merge_videos(
+                video_urls=tts_video_urls,
+                transition_type=transition_type,
+                output_filename=output_filename or f"merged_videos_with_tts_{int(time.time() * 1000)}.mp4"
+            )
+            
+            # 4단계: 임시 파일 정리
+            for video_path in video_paths + tts_video_paths:
+                try:
+                    os.remove(video_path)
+                except:
+                    pass
+            
+            print(f"✅ TTS가 추가된 비디오 합치기 완료!")
+            return final_video_path
+            
+        except Exception as e:
+            print(f"❌ TTS 비디오 합치기 실패: {e}")
+            raise

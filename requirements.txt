@@ -27,3 +27,4 @@ urllib3==2.2.3
 uvicorn==0.34.0
 langchain==0.3.22
 langchain-openai==0.2.13
+moviepy==1.0.3
