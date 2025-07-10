@@ -13,7 +13,7 @@ async def create_video_with_runway(
     model: str = "gen4_image",  # Runway AI 모델명 (가장 안정적인 버전)
     seed: Optional[int] = None,  # 재현 가능한 결과를 위한 시드값 (선택사항)
     api_key: str = None  # Runway API 인증키
-) -> str:  # 리턴: 생성된 영상의 다운로드 URL
+) -> str:  # 리턴: 생성된 영상의 다운로드 URL200
     """
     Runway API를 사용하여 이미지를 영상으로 변환
     
