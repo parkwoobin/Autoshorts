@@ -15,6 +15,9 @@ from workflows import (
     generate_scene_prompts, generate_images_sequentially
 )
 
+# TTS 관련 함수들을 별도 파일에서 import
+from storyboard_to_tts import generate_complete_tts_from_scratch
+
 # 웹 애플리케이션 객체 생성
 app = FastAPI(title="Storyboard API", version="1.0.0")
 
@@ -274,6 +277,71 @@ async def run_image_generation(
         raise HTTPException(status_code=500, detail=f"이미지 생성 중 오류 발생: {e}")
 
 # ==================================================================================
+"""
+5단계: 스토리보드 → TTS 대본 및 오디오 생성
+새로운 단계: 사용자가 생성한 스토리보드를 기반으로 TTS 대본과 오디오 파일을 생성
+"""
+@app.post("/video/create-tts-from-storyboard")
+async def create_tts_from_storyboard():
+    """스토리보드를 기반으로 TTS 대본 및 오디오 생성"""
+    
+    # 필요한 데이터가 모두 있는지 확인
+    if not current_project.get("persona"):
+        raise HTTPException(status_code=400, detail="먼저 1단계(페르소나 생성)를 완료해주세요.")
+    
+    if not current_project.get("storyboard"):
+        raise HTTPException(status_code=400, detail="먼저 스토리보드를 생성해주세요.")
+    
+    try:
+        # current_project에서 필요한 데이터 추출
+        persona_data = current_project.get("persona", {})
+        storyboard_data = current_project.get("storyboard", {})
+        
+        # 페르소나 정보 추출
+        persona_description = persona_data.get("persona_description", "")
+        marketing_insights = persona_data.get("marketing_insights", "")
+        
+        # 광고 컨셉 추출 (2단계에서 생성된 것 또는 기본값)
+        ad_concept = current_project.get("ad_concept", "효과적인 광고 컨셉")
+        
+        # 스토리보드 장면 추출
+        storyboard_scenes = storyboard_data.get("scenes", [])
+        
+        if not storyboard_scenes:
+            raise HTTPException(status_code=400, detail="스토리보드에 장면 데이터가 없습니다.")
+        
+        print(f"🎵 TTS 생성 시작...")
+        print(f"   페르소나: {len(persona_description)} 글자")
+        print(f"   마케팅 인사이트: {len(marketing_insights)} 글자")
+        print(f"   광고 컨셉: {len(ad_concept)} 글자")
+        print(f"   스토리보드 장면: {len(storyboard_scenes)}개")
+        
+        # TTS 생성 함수 호출
+        tts_result = await generate_complete_tts_from_scratch(
+            persona_description=persona_description,
+            marketing_insights=marketing_insights,
+            ad_concept=ad_concept,
+            storyboard_scenes=storyboard_scenes
+        )
+        
+        # 결과를 current_project에 저장
+        current_project["tts_result"] = tts_result
+        
+        return {
+            "message": "TTS 대본 및 오디오 생성이 완료되었습니다.",
+            "success": tts_result.get("success", False),
+            "successful_count": tts_result.get("successful_count", 0),
+            "failed_count": tts_result.get("failed_count", 0),
+            "success_rate": tts_result.get("success_rate", "0%"),
+            "results": tts_result.get("results", []),
+            "processing_info": tts_result.get("processing_info", {})
+        }
+        
+    except Exception as e:
+        print(f"❌ TTS 생성 중 오류 발생: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS 생성 실패: {str(e)}")
+
+# ==================================================================================
 # 유틸리티 엔드포인트들
 # ==================================================================================
 
@@ -316,7 +384,8 @@ async def health_check():
             "step1": "POST /step1/target-customer - 타겟 고객 정보 입력",
             "step2": "POST /step2/ad-concept - 광고 컨셉 생성",  
             "step3": "POST /step3/user-video-input - 사용자 아이디어 입력 및 스토리보드 생성",
-            "step4": "POST /step4/generate-images - 이미지 생성"
+            "step4": "POST /step4/generate-images - 이미지 생성",
+            "step5": "POST /video/create-tts-from-storyboard - TTS 대본 및 오디오 생성"
         }
     }
 

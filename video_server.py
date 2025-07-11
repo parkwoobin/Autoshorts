@@ -49,6 +49,18 @@ def add_video_features_to_server():
                     status_code=404
                 )
 
+        @app.get("/llm-tts-test", response_class=HTMLResponse)
+        async def llm_tts_test_page():
+            """OpenAI LLM TTS 테스트 웹 인터페이스"""
+            try:
+                with open("static/llm_tts_test.html", "r", encoding="utf-8") as f:
+                    return HTMLResponse(content=f.read())
+            except FileNotFoundError:
+                return HTMLResponse(
+                    content="<h1>LLM TTS Test Page not found</h1>", 
+                    status_code=404
+                )
+
         print("🎬 비디오 합치기 및 트랜지션 기능을 추가합니다...")  # 기능 추가 시작 알림
         print("📁 정적 파일 서빙 활성화: /static")  # 정적 파일 서빙 활성화 알림
 
@@ -66,7 +78,9 @@ def add_video_features_to_server():
                     "POST /video/merge-custom": "사용자 비디오 URL로 합치기",  # 사용자 비디오 합치기 API
                     "POST /video/merge-user-videos": "6-1단계: 사용자 비디오 랜덤 트랜지션 합치기",  # 사용자 비디오 랜덤 트랜지션 API
                     "POST /video/create-complete": "🆕 완전한 비디오 제작: 스토리보드 → 비디오 → TTS → 자막",  # 완전한 워크플로우 API
-                    "POST /video/create-tts-from-storyboard": "🎙️ 스토리보드에서 TTS 생성",  # 스토리보드 기반 TTS 생성
+                    "POST /video/create-tts-from-storyboard": "🎙️ OpenAI LLM 기반 TTS 자동 생성",  # 스토리보드 기반 TTS 생성
+                    "POST /video/test-llm-tts": "🧪 OpenAI LLM TTS 테스트 (기본값)",  # LLM TTS 테스트
+                    "POST /video/create-simple-tts": "🎤 간단한 텍스트 TTS 생성",  # 간단한 TTS 생성
                     "POST /video/generate-subtitles": "📝 TTS 오디오에서 자막 파일(.srt) 생성",  # 자막 생성 API
                     "POST /video/merge-with-tts-subtitles": "🎬 비디오 + TTS + 자막 완전 합치기"  # TTS와 자막 포함 완전 합치기
                 },
@@ -79,7 +93,10 @@ def add_video_features_to_server():
                     "🎥 Runway API 비디오 생성 (이미지 → 비디오)",  # Runway API 연동
                     "🎙️ ElevenLabs TTS 음성 생성",  # TTS 음성 생성
                     "📝 Whisper 자동 자막 생성",  # 자막 생성
-                    "🎵 스토리보드 기반 내레이션 추가"  # 스토리보드 내레이션
+                    "🎵 스토리보드 기반 내레이션 추가",  # 스토리보드 내레이션
+                    "🧠 OpenAI LLM 기반 TTS 스크립트 자동 생성",  # LLM 기반 스크립트 생성
+                    "🔧 0.1초 정밀도 Whisper AI 자막",  # 정밀 자막
+                    "🎤 간단한 텍스트 → TTS 변환"  # 간단한 TTS
                 ]
             }
 
@@ -454,29 +471,176 @@ def add_video_features_to_server():
         # === 스토리보드 기반 TTS 내레이션 생성 API 엔드포인트 ===
         @app.post("/video/create-tts-from-storyboard")  # POST 요청으로 스토리보드 기반 TTS 생성
         async def create_tts_from_storyboard(request: dict):  # 스토리보드 기반 TTS 생성 요청 처리
-            """persona_description, marketing_insights, ad_concept, 스토리보드 scene 설명을 결합하여 TTS 내레이션 생성"""
+            """persona_description, marketing_insights, ad_concept를 OpenAI LLM으로 TTS 내레이션 자동 생성"""
             try:
                 # 요청 데이터 추출
                 persona_description = request.get("persona_description", "")  # 페르소나 설명
                 marketing_insights = request.get("marketing_insights", "")  # 마케팅 인사이트
                 ad_concept = request.get("ad_concept", "")  # 광고 컨셉
-                storyboard_scenes = request.get("storyboard_scenes", [])  # 스토리보드 장면들
+                storyboard_scenes = request.get("storyboard_scenes", [])  # 스토리보드 장면들 (선택사항)
                 voice_id = request.get("voice_id")  # 음성 ID (선택사항)
                 voice_gender = request.get("voice_gender", "female")  # 음성 성별
                 voice_language = request.get("voice_language", "ko")  # 음성 언어
+                product_name = request.get("product_name", "상품")  # 상품명
+                brand_name = request.get("brand_name", "브랜드")  # 브랜드명
                 
-                # 입력 검증
-                if not storyboard_scenes:
-                    raise HTTPException(status_code=400, detail="storyboard_scenes가 필요합니다.")
+                # 기본 정보가 없으면 에러
+                if not any([persona_description, marketing_insights, ad_concept, storyboard_scenes]):
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="persona_description, marketing_insights, ad_concept, storyboard_scenes 중 최소 하나는 필요합니다."
+                    )
                 
-                print(f"🎙️ 스토리보드 기반 TTS 내레이션 생성 요청 처리 시작...")
+                print(f"🎙️ OpenAI LLM 기반 TTS 내레이션 자동 생성 시작...")
                 print(f"   페르소나: {persona_description[:50]}{'...' if len(persona_description) > 50 else ''}")
                 print(f"   마케팅 인사이트: {marketing_insights[:50]}{'...' if len(marketing_insights) > 50 else ''}")
                 print(f"   광고 컨셉: {ad_concept[:50]}{'...' if len(ad_concept) > 50 else ''}")
-                print(f"   장면 수: {len(storyboard_scenes)}")
+                print(f"   스토리보드 장면: {len(storyboard_scenes)}개")
+                print(f"   상품명: {product_name}")
+                print(f"   브랜드명: {brand_name}")
                 print(f"   음성 설정: {voice_gender} ({voice_language})")
                 
-                # ElevenLabs API 키 확인
+                # OpenAI API 키 확인
+                import os
+                openai_api_key = os.getenv("OPENAI_API_KEY")
+                if not openai_api_key:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="OpenAI API 키가 설정되지 않았습니다. .env 파일의 OPENAI_API_KEY를 확인해주세요."
+                    )
+                
+                # 1단계: OpenAI LLM으로 TTS 스크립트 자동 생성
+                print(f"🤖 OpenAI GPT로 TTS 스크립트 자동 생성 중...")
+                
+                # LLM 프롬프트 구성
+                llm_prompt = f"""
+당신은 광고 영상용 TTS 내레이션 전문가입니다. 
+다음 정보를 바탕으로 매력적이고 설득력 있는 광고 내레이션 스크립트를 한국어로 작성해주세요.
+
+**상품/브랜드 정보:**
+- 상품명: {product_name}
+- 브랜드명: {brand_name}
+
+**타겟 고객 (페르소나):**
+{persona_description if persona_description else "일반 소비자"}
+
+**마케팅 포인트:**
+{marketing_insights if marketing_insights else "품질과 가치를 중시하는 고객층"}
+
+**광고 컨셉:**
+{ad_concept if ad_concept else "신뢰할 수 있는 브랜드"}
+
+**스토리보드 장면 정보:**
+{storyboard_scenes if storyboard_scenes else "제품을 소개하는 일반적인 광고"}
+
+**요구사항:**
+1. 총 3-5개의 짧은 문장으로 구성 (각 문장은 5-10초 분량)
+2. 자연스럽고 친근한 톤
+3. 제품의 핵심 가치 강조
+4. 감정적으로 어필할 수 있는 내용
+5. 마지막은 행동 유도 문구 포함
+
+**출력 형식:**
+각 문장을 번호와 함께 나열해주세요.
+예시:
+1. 안녕하세요, {brand_name}입니다.
+2. ...
+3. ...
+
+스크립트만 작성해주세요:
+"""
+                
+                # OpenAI API 호출
+                import httpx
+                
+                headers = {
+                    "Authorization": f"Bearer {openai_api_key}",
+                    "Content-Type": "application/json"
+                }
+                
+                payload = {
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "당신은 광고 내레이션 전문가입니다. 매력적이고 설득력 있는 한국어 광고 스크립트를 작성합니다."
+                        },
+                        {
+                            "role": "user",
+                            "content": llm_prompt
+                        }
+                    ],
+                    "max_tokens": 1000,
+                    "temperature": 0.7
+                }
+                
+                try:
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        response = await client.post(
+                            "https://api.openai.com/v1/chat/completions",
+                            headers=headers,
+                            json=payload
+                        )
+                        
+                        if response.status_code != 200:
+                            raise Exception(f"OpenAI API 요청 실패: {response.status_code} - {response.text}")
+                        
+                        response_data = response.json()
+                        generated_script = response_data["choices"][0]["message"]["content"]
+                        
+                        print(f"✅ OpenAI LLM 스크립트 생성 완료:")
+                        print(f"   생성된 스크립트 길이: {len(generated_script)}자")
+                        print(f"   미리보기: {generated_script[:100]}...")
+                        
+                except Exception as llm_error:
+                    print(f"⚠️ OpenAI LLM 호출 실패: {llm_error}")
+                    # LLM 실패 시 기본 스크립트 생성
+                    generated_script = f"""1. 안녕하세요, {brand_name}와 함께하세요.
+2. {product_name}는 {persona_description if persona_description else '고객'}을 위한 특별한 제품입니다.
+3. {marketing_insights if marketing_insights else '최고의 품질과 가치'}를 제공합니다.
+4. {ad_concept if ad_concept else '신뢰할 수 있는 브랜드'}로 여러분과 함께하겠습니다.
+5. 지금 바로 {product_name}를 만나보세요."""
+                    print(f"🔄 기본 스크립트로 대체: {generated_script[:50]}...")
+                
+                # 2단계: 생성된 스크립트를 문장별로 파싱
+                tts_scripts = []
+                
+                # 생성된 스크립트에서 번호가 있는 문장들 추출
+                import re
+                
+                # 번호로 시작하는 문장들 찾기 (1. 2. 3. 형태)
+                numbered_sentences = re.findall(r'(\d+)\.\s*([^0-9]+?)(?=\d+\.|$)', generated_script, re.DOTALL)
+                
+                if numbered_sentences:
+                    for i, (number, text) in enumerate(numbered_sentences):
+                        clean_text = text.strip().replace('\n', ' ').replace('  ', ' ')
+                        if clean_text:
+                            tts_scripts.append({
+                                "scene_number": int(number),
+                                "script_type": "generated",
+                                "text": clean_text,
+                                "description": f"LLM 생성 스크립트 {number}",
+                                "duration": 7  # 기본 7초
+                            })
+                else:
+                    # 번호가 없으면 문장 단위로 분할
+                    sentences = re.split(r'[.!?]\s+', generated_script)
+                    for i, sentence in enumerate(sentences):
+                        clean_sentence = sentence.strip()
+                        if clean_sentence and len(clean_sentence) > 10:
+                            tts_scripts.append({
+                                "scene_number": i + 1,
+                                "script_type": "generated",
+                                "text": clean_sentence,
+                                "description": f"LLM 생성 문장 {i + 1}",
+                                "duration": 7
+                            })
+                
+                print(f"✅ 총 {len(tts_scripts)}개의 TTS 스크립트 생성 완료:")
+                for script in tts_scripts:
+                    print(f"   - {script['description']}: {script['text'][:50]}...")
+                
+                # 3단계: ElevenLabs API 키 확인 및 TTS 변환
                 from tts_utils import get_elevenlabs_api_key
                 api_key = get_elevenlabs_api_key()
                 if not api_key:
@@ -485,88 +649,19 @@ def add_video_features_to_server():
                         detail="ElevenLabs API 키가 설정되지 않았습니다. .env 파일의 ELEVENLABS_API_KEY를 확인해주세요."
                     )
                 
-                # 1단계: 각 장면별 TTS 스크립트 생성
-                tts_scripts = []
-                
-                # 인트로 스크립트 생성 (페르소나, 마케팅 인사이트, 광고 컨셉 결합)
-                intro_script = ""
-                if persona_description:
-                    intro_script += f"타겟 고객은 {persona_description}입니다. "
-                if marketing_insights:
-                    intro_script += f"마케팅 포인트는 {marketing_insights}입니다. "
-                if ad_concept:
-                    intro_script += f"이 광고의 핵심 컨셉은 {ad_concept}입니다. "
-                
-                if intro_script:
-                    intro_script += "이제 광고 영상을 시작하겠습니다."
-                    tts_scripts.append({
-                        "scene_number": 0,
-                        "script_type": "intro",
-                        "text": intro_script,
-                        "description": "인트로 - 페르소나, 마케팅 인사이트, 광고 컨셉 소개"
-                    })
-                
-                # 각 장면별 스크립트 생성
-                for i, scene in enumerate(storyboard_scenes, 1):
-                    scene_text = ""
-                    
-                    # 장면 정보 추출
-                    if isinstance(scene, dict):
-                        prompt_text = scene.get("promptText", scene.get("prompt_text", scene.get("description", "")))
-                        scene_number = scene.get("scene_number", i)
-                        duration = scene.get("duration", 5)
-                    else:
-                        prompt_text = str(scene)
-                        scene_number = i
-                        duration = 5
-                    
-                    if prompt_text:
-                        # 장면 설명을 자연스러운 내레이션으로 변환
-                        scene_text = f"장면 {scene_number}: {prompt_text}"
-                        
-                        # 장면 설명을 좀 더 자연스럽게 변환
-                        if "A woman" in prompt_text or "woman" in prompt_text:
-                            scene_text = prompt_text.replace("A woman", "한 여성이").replace("woman", "여성")
-                        elif "A man" in prompt_text or "man" in prompt_text:
-                            scene_text = prompt_text.replace("A man", "한 남성이").replace("man", "남성")
-                        
-                        # 영어 표현을 한국어로 자연스럽게 변환
-                        scene_text = scene_text.replace("holding", "들고 있는").replace("using", "사용하는")
-                        scene_text = scene_text.replace("with", "와 함께").replace("and", "그리고")
-                        
-                        tts_scripts.append({
-                            "scene_number": scene_number,
-                            "script_type": "scene",
-                            "text": scene_text,
-                            "description": f"장면 {scene_number} 설명",
-                            "duration": duration
-                        })
-                
-                # 아웃트로 스크립트 생성
-                outro_script = "이상으로 광고 영상을 마치겠습니다. 감사합니다."
-                tts_scripts.append({
-                    "scene_number": len(storyboard_scenes) + 1,
-                    "script_type": "outro",
-                    "text": outro_script,
-                    "description": "아웃트로 - 광고 마무리"
-                })
-                
-                print(f"✅ 총 {len(tts_scripts)}개의 TTS 스크립트 생성 완료:")
-                for script in tts_scripts:
-                    print(f"   - {script['description']}: {script['text'][:50]}...")
-                
-                # 2단계: 각 스크립트를 TTS로 변환
+                # 4단계: 각 스크립트를 TTS로 변환
                 from tts_utils import create_multiple_tts_audio
                 
                 # 스크립트 텍스트만 추출
                 script_texts = [script["text"] for script in tts_scripts]
                 
                 print(f"🎤 {len(script_texts)}개 스크립트를 TTS로 변환 중...")
+                print(f"   사용할 음성 ID: {voice_id or '21m00Tcm4TlvDq8ikWAM'} (기본값: Rachel)")
                 
-                # 다중 TTS 오디오 생성
+                # 다중 TTS 오디오 생성 (voice_id가 None이면 기본값 사용)
                 tts_results = await create_multiple_tts_audio(
                     text_list=script_texts,
-                    voice_id=voice_id,
+                    voice_id=voice_id or '21m00Tcm4TlvDq8ikWAM',  # 기본값 보장
                     api_key=api_key,
                     output_dir="./static/audio"
                 )
@@ -605,7 +700,8 @@ def add_video_features_to_server():
                 # 4단계: 응답 생성
                 return {
                     "success": True,
-                    "message": f"스토리보드 기반 TTS 내레이션 생성 완료! {len(successful_tts)}개 오디오 파일 생성",
+                    "message": f"OpenAI LLM으로 TTS 내레이션 자동 생성 완료! {len(successful_tts)}개 오디오 파일 생성",
+                    "generated_script": generated_script,
                     "tts_scripts": tts_scripts,
                     "successful_tts": successful_tts,
                     "failed_tts": failed_tts,
@@ -615,10 +711,17 @@ def add_video_features_to_server():
                         "failed": len(failed_tts),
                         "success_rate": f"{(len(successful_tts) / len(tts_scripts)) * 100:.1f}%" if tts_scripts else "0%"
                     },
+                    "llm_generation": {
+                        "used_openai": True,
+                        "script_length": len(generated_script),
+                        "sentences_extracted": len(tts_scripts)
+                    },
                     "input_data": {
                         "persona_description": persona_description,
                         "marketing_insights": marketing_insights,
                         "ad_concept": ad_concept,
+                        "product_name": product_name,
+                        "brand_name": brand_name,
                         "scene_count": len(storyboard_scenes),
                         "voice_settings": {
                             "voice_id": voice_id,
@@ -807,6 +910,294 @@ def add_video_features_to_server():
                 print(f"❌ TTS + 자막 완전 합치기 실패: {e}")
                 raise HTTPException(status_code=500, detail=f"TTS + 자막 완전 합치기 실패: {str(e)}")
 
+        # === OpenAI LLM TTS 스크립트 생성 테스트 엔드포인트 ===
+        @app.post("/video/test-llm-tts")  # POST 요청으로 LLM TTS 테스트
+        async def test_llm_tts_generation():  # 간단한 LLM TTS 테스트, 전 단계 인자를 넣고 생성
+            """OpenAI LLM으로 TTS 스크립트 자동 생성 테스트 (1-4단계 워크플로우 데이터 사용)"""
+            try:
+                print(f"🧪 OpenAI LLM TTS 스크립트 자동 생성 테스트 시작...")
+                
+                # 1-4단계 워크플로우 데이터를 활용한 테스트 요청 구성
+                test_request = {
+                    # 1단계: 페르소나 데이터
+                    "persona_description": "20-30대 직장인, 건강에 관심이 많고 시간이 부족한 바쁜 현대인. 온라인 쇼핑을 선호하며 제품 리뷰를 꼼꼼히 확인하는 성향.",
+                    
+                    # 2단계: 마케팅 인사이트
+                    "marketing_insights": "편리함과 건강함을 동시에 추구하는 성향, SNS를 통한 정보 습득 선호, 시간 절약에 높은 가치를 두며 신뢰할 수 있는 브랜드를 선호",
+                    
+                    # 3단계: 광고 컨셉
+                    "ad_concept": "바쁜 일상 속에서도 간편하게 건강을 챙길 수 있는 혁신적인 솔루션 제안. 시간은 절약하고 건강은 업그레이드하는 스마트한 선택",
+                    
+                    # 4단계: 스토리보드 장면들
+                    "storyboard_scenes": [
+                        {
+                            "scene_number": 1,
+                            "description": "바쁜 아침, 시간에 쫓기며 준비하는 직장인의 모습",
+                            "prompt_text": "busy office worker rushing in the morning, preparing for work",
+                            "duration": 5.0,
+                            "emotion": "stressed"
+                        },
+                        {
+                            "scene_number": 2,
+                            "description": "제품을 간편하게 섭취하며 만족스러워하는 모습",
+                            "prompt_text": "person easily consuming health product with satisfaction",
+                            "duration": 5.0,
+                            "emotion": "satisfied"
+                        },
+                        {
+                            "scene_number": 3,
+                            "description": "활기찬 하루를 보내며 에너지가 넘치는 모습",
+                            "prompt_text": "energetic person having a productive day at work",
+                            "duration": 5.0,
+                            "emotion": "confident"
+                        }
+                    ],
+                    
+                    # 추가 설정
+                    "product_name": "헬시타임",
+                    "brand_name": "웰니스랩",
+                    "voice_id": "21m00Tcm4TlvDq8ikWAM",  # Rachel 음성
+                    "voice_gender": "female",
+                    "voice_language": "ko"
+                }
+                
+                print(f"📋 1-4단계 워크플로우 테스트 데이터:")
+                print(f"   1단계 페르소나: {test_request['persona_description'][:50]}...")
+                print(f"   2단계 마케팅 인사이트: {test_request['marketing_insights'][:50]}...")
+                print(f"   3단계 광고 컨셉: {test_request['ad_concept'][:50]}...")
+                print(f"   4단계 스토리보드: {len(test_request['storyboard_scenes'])}개 장면")
+                
+                # 기존 엔드포인트 재사용
+                result = await create_tts_from_storyboard(test_request)
+                
+                # 테스트 결과에 추가 정보 포함
+                result["test_mode"] = True
+                result["test_description"] = "1-4단계 워크플로우 데이터 기반 OpenAI LLM TTS 스크립트 자동 생성 테스트"
+                result["test_data"] = test_request
+                result["workflow_stages"] = {
+                    "step1": "타겟 페르소나",
+                    "step2": "마케팅 인사이트", 
+                    "step3": "광고 컨셉",
+                    "step4": "스토리보드 장면"
+                }
+                
+                return result
+                
+            except Exception as e:
+                print(f"❌ LLM TTS 테스트 실패: {e}")
+                raise HTTPException(status_code=500, detail=f"LLM TTS 테스트 실패: {str(e)}")
+
+        # === 간단한 텍스트 입력 TTS 생성 엔드포인트 ===
+        @app.post("/video/create-simple-tts")  # POST 요청으로 간단한 TTS 생성
+        async def create_simple_tts(request: dict):  # 간단한 텍스트로 TTS 생성
+            """간단한 텍스트 입력으로 바로 TTS 생성 (LLM 없이)"""
+            try:
+                # 요청 데이터 추출
+                text_input = request.get("text", "")  # 입력 텍스트
+                voice_id = request.get("voice_id")  # 음성 ID
+                
+                if not text_input:
+                    raise HTTPException(status_code=400, detail="text가 필요합니다.")
+                
+                print(f"🎤 간단한 TTS 생성 시작...")
+                print(f"   텍스트: {text_input[:100]}{'...' if len(text_input) > 100 else ''}")
+                
+                # ElevenLabs API 키 확인
+                from tts_utils import get_elevenlabs_api_key, create_tts_audio
+                api_key = get_elevenlabs_api_key()
+                if not api_key:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail="ElevenLabs API 키가 설정되지 않았습니다."
+                    )
+                
+                # TTS 생성
+                tts_result = await create_tts_audio(
+                    text=text_input,
+                    voice_id=voice_id or '21m00Tcm4TlvDq8ikWAM',  # Rachel 기본값
+                    api_key=api_key,
+                    output_dir="./static/audio"
+                )
+                
+                if tts_result.success:
+                    audio_filename = os.path.basename(tts_result.audio_file_path)
+                    audio_url = f"/static/audio/{audio_filename}"
+                    
+                    return {
+                        "success": True,
+                        "message": "간단한 TTS 생성 완료!",
+                        "audio_url": audio_url,
+                        "audio_file_path": tts_result.audio_file_path,
+                        "duration": tts_result.duration,
+                        "file_size": tts_result.file_size,
+                        "text": text_input,
+                        "voice_id": voice_id or '21m00Tcm4TlvDq8ikWAM'
+                    }
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"TTS 생성 실패: {tts_result.error}"
+                    )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                print(f"❌ 간단한 TTS 생성 실패: {e}")
+                raise HTTPException(status_code=500, detail=f"간단한 TTS 생성 실패: {str(e)}")
+
+        # === 스토리보드 → OpenAI LLM → TTS 전용 엔드포인트 ===
+        @app.post("/video/storyboard-to-tts")  # POST 요청으로 스토리보드 → LLM → TTS 변환
+        async def storyboard_to_tts_conversion(request: dict):  # 스토리보드 → LLM → TTS 전체 프로세스
+            """스토리보드 내용을 OpenAI LLM으로 TTS 대본 작성 후 음성 변환"""
+            try:
+                # 요청 데이터 추출
+                storyboard_data = request.get("storyboard_data", {})  # 스토리보드 데이터
+                product_name = request.get("product_name", "상품")  # 상품명
+                brand_name = request.get("brand_name", "브랜드")  # 브랜드명
+                target_audience = request.get("target_audience", "일반 소비자")  # 타겟 고객
+                ad_concept = request.get("ad_concept", "매력적인 광고")  # 광고 컨셉
+                script_style = request.get("script_style", "친근하고 자연스러운")  # 스크립트 스타일
+                voice_id = request.get("voice_id", "21m00Tcm4TlvDq8ikWAM")  # 음성 ID (Rachel 기본값)
+                output_dir = request.get("output_dir", "./static/audio")  # 출력 디렉토리
+                
+                # 입력 검증
+                if not storyboard_data:
+                    raise HTTPException(status_code=400, detail="storyboard_data가 필요합니다.")
+                
+                print(f"🎬 스토리보드 → OpenAI LLM → TTS 변환 요청 처리 시작...")
+                print(f"   상품명: {product_name}")
+                print(f"   브랜드명: {brand_name}")
+                print(f"   타겟 고객: {target_audience}")
+                print(f"   광고 컨셉: {ad_concept}")
+                print(f"   스크립트 스타일: {script_style}")
+                print(f"   음성 ID: {voice_id}")
+                
+                # 스토리보드 → LLM → TTS 변환기 import 및 실행
+                from storyboard_to_tts import StoryboardToTTSGenerator
+                
+                generator = StoryboardToTTSGenerator()
+                
+                # 전체 프로세스 실행
+                result = await generator.process_storyboard_to_tts(
+                    storyboard_data=storyboard_data,
+                    product_name=product_name,
+                    brand_name=brand_name,
+                    target_audience=target_audience,
+                    ad_concept=ad_concept,
+                    script_style=script_style,
+                    voice_id=voice_id,
+                    output_dir=output_dir
+                )
+                
+                if result.get("success"):
+                    print(f"✅ 스토리보드 → LLM → TTS 변환 완료!")
+                    print(f"   총 {result['successful_count']}개 오디오 파일 생성")
+                    
+                    return {
+                        "success": True,
+                        "message": f"스토리보드 → OpenAI LLM → TTS 변환 완료! {result['successful_count']}개 오디오 생성",
+                        "storyboard_scenes": result["scenes"],
+                        "generated_scripts": result["tts_scripts"],
+                        "tts_results": result["results"],
+                        "summary": {
+                            "total_scenes": len(result["scenes"]),
+                            "successful_tts": result["successful_count"],
+                            "failed_tts": result["failed_count"],
+                            "success_rate": result["success_rate"]
+                        },
+                        "processing_info": result["processing_info"],
+                        "workflow_type": "storyboard_to_tts"
+                    }
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"스토리보드 → LLM → TTS 변환 실패: {result.get('error', '알 수 없는 오류')}"
+                    )
+                
+            except HTTPException:
+                raise  # HTTP 예외는 그대로 전달
+            except Exception as e:
+                print(f"❌ 스토리보드 → LLM → TTS 변환 실패: {e}")
+                raise HTTPException(status_code=500, detail=f"스토리보드 → LLM → TTS 변환 실패: {str(e)}")
+
+        # === 스토리보드 → LLM → TTS 테스트 엔드포인트 ===
+        @app.post("/video/test-storyboard-tts")  # POST 요청으로 스토리보드 TTS 테스트
+        async def test_storyboard_tts():  # 스토리보드 TTS 테스트 (샘플 데이터 사용)
+            """스토리보드 → OpenAI LLM → TTS 변환 테스트 (샘플 데이터)"""
+            try:
+                # 테스트용 샘플 스토리보드 데이터
+                sample_storyboard = {
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "description": "밝은 미소를 지으며 제품을 들고 있는 모델의 모습",
+                            "image_prompt": "beautiful model holding skincare product with bright smile in natural lighting",
+                            "duration": 5.0,
+                            "emotion": "happy",
+                            "action": "product_introduction"
+                        },
+                        {
+                            "scene_number": 2,
+                            "description": "제품을 사용하는 자연스러운 모습, 부드러운 텍스처 강조",
+                            "image_prompt": "person applying skincare product gently, smooth texture close-up",
+                            "duration": 6.0,
+                            "emotion": "satisfied",
+                            "action": "product_usage"
+                        },
+                        {
+                            "scene_number": 3,
+                            "description": "건강하고 빛나는 피부를 보여주는 클로즈업",
+                            "image_prompt": "close-up of healthy glowing skin, natural radiance",
+                            "duration": 4.0,
+                            "emotion": "confident",
+                            "action": "result_showcase"
+                        },
+                        {
+                            "scene_number": 4,
+                            "description": "제품 라인업과 브랜드 로고가 나타나는 마무리 장면",
+                            "image_prompt": "product lineup display with elegant brand logo",
+                            "duration": 5.0,
+                            "emotion": "trustworthy",
+                            "action": "brand_closing"
+                        }
+                    ]
+                }
+                
+                # 테스트용 요청 데이터 구성
+                test_request = {
+                    "storyboard_data": sample_storyboard,
+                    "product_name": "글로우 에센스",
+                    "brand_name": "네이처뷰티",
+                    "target_audience": "20-40대 여성, 자연주의 스킨케어 선호층",
+                    "ad_concept": "자연의 힘으로 빛나는 건강한 아름다움",
+                    "script_style": "따뜻하고 신뢰감 있는, 자연스러운 톤",
+                    "voice_id": "21m00Tcm4TlvDq8ikWAM",  # Rachel 음성
+                    "output_dir": "./static/audio"
+                }
+                
+                print(f"🧪 스토리보드 → OpenAI LLM → TTS 변환 테스트 시작...")
+                
+                # 기존 엔드포인트 재사용
+                result = await storyboard_to_tts_conversion(test_request)
+                
+                # 테스트 결과에 추가 정보 포함
+                result["test_mode"] = True
+                result["test_description"] = "스토리보드 기반 OpenAI LLM TTS 변환 테스트"
+                result["sample_storyboard"] = sample_storyboard
+                result["test_settings"] = {
+                    "product_name": test_request["product_name"],
+                    "brand_name": test_request["brand_name"],
+                    "target_audience": test_request["target_audience"],
+                    "ad_concept": test_request["ad_concept"],
+                    "script_style": test_request["script_style"]
+                }
+                
+                return result
+                
+            except Exception as e:
+                print(f"❌ 스토리보드 TTS 테스트 실패: {e}")
+                raise HTTPException(status_code=500, detail=f"스토리보드 TTS 테스트 실패: {str(e)}")
+
         print("✅ 비디오 기능 추가 완료!")  # 모든 기능 추가 완료 알림
         print("📋 추가된 API 엔드포인트:")  # 추가된 엔드포인트 목록 출력 시작
         print("   - GET  /video/status (상태 확인)")  # 상태 확인 API
@@ -835,10 +1226,11 @@ def start_video_server():
     """비디오 서버 시작"""
     print("🎬 비디오 합치기 서버를 시작합니다...")  # 서버 시작 알림
     print("📋 서버 정보:")  # 서버 설정 정보 출력 시작
-    print("   - 포트: 8000")  # 서버가 실행될 포트 번호
-    print("   - 주소: http://127.0.0.1:8000")  # 로컬 접속 주소
-    print("   - API 문서: http://127.0.0.1:8000/docs")  # FastAPI 자동 생성 API 문서 주소
-    print("   - 상태 확인: http://127.0.0.1:8000/video/status")  # 비디오 기능 상태 확인 주소
+    print("   - 포트: 8001")  # 서버가 실행될 포트 번호
+    print("   - 주소: http://127.0.0.1:8001")  # 로컬 접속 주소
+    print("   - API 문서: http://127.0.0.1:8001/docs")  # FastAPI 자동 생성 API 문서 주소
+    print("   - 상태 확인: http://127.0.0.1:8001/video/status")  # 비디오 기능 상태 확인 주소
+    print("   - LLM TTS 테스트: http://127.0.0.1:8001/llm-tts-test")  # LLM TTS 테스트 페이지
     
     print("\n🔧 비디오 기능 추가 중...")  # 기능 추가 시작 알림
     
@@ -867,7 +1259,7 @@ def start_video_server():
     uvicorn.run(
         app,  # 실행할 FastAPI 애플리케이션 객체
         host="127.0.0.1",  # 서버 호스트 주소 (로컬호스트)
-        port=8000,  # 서버 포트 번호
+        port=8001,  # 서버 포트 번호 (8000 대신 8001 사용)
         reload=False,  # 코드 변경 시 자동 재시작 비활성화 (프로덕션 모드)
         log_level="info"  # 로그 레벨 설정 (정보 수준)
     )
