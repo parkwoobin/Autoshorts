@@ -12,7 +12,7 @@ from tts_utils import get_elevenlabs_api_key
 
 class SubtitleConfig:
     """자막 관련 설정값들"""
-    DEFAULT_FONT_SIZE = 14
+    DEFAULT_FONT_SIZE = 30
     DEFAULT_FONT_COLOR = "white"
     DEFAULT_FONT_BORDER_COLOR = "black"
     DEFAULT_FONT_BORDER_WIDTH = 2
@@ -230,40 +230,46 @@ def add_subtitles_to_video_ffmpeg(
             gap_duration=0.1   # 더 촘촘한 간격
         )
         
-        # 폰트 선택 및 존재 확인
-        font_candidates = [
-            SubtitleConfig.FONTS.get(language, SubtitleConfig.FONTS["default"]),
-            SubtitleConfig.FONTS.get("ko"),  # 한국어 폰트 우선
-            SubtitleConfig.FONTS.get("ko_alt"),  # 대안 1
-            SubtitleConfig.FONTS.get("ko_alt2"),  # 대안 2
-            SubtitleConfig.FONTS.get("default")  # 최후 수단
-        ]
+        # 자막 파일에서 텍스트 읽어서 한국어 감지
+        subtitle_text = ""
+        try:
+            with open(sequential_subtitle_path, 'r', encoding='utf-8') as f:
+                subtitle_text = f.read()
+        except:
+            subtitle_text = ""
         
-        font = None
-        for font_candidate in font_candidates:
-            if font_candidate and os.path.exists(font_candidate):
-                font = font_candidate
-                print(f"✅ 사용할 폰트: {font}")
-                break
+        # 한국어 감지 및 폰트 선택
+        has_korean, selected_font = detect_and_select_korean_font(subtitle_text)
         
-        if not font:
-            print("⚠️ 한국어 폰트를 찾을 수 없습니다. drawtext 방식으로 대체합니다.")
-            # drawtext 방식으로 대체 처리
-            return create_video_with_drawtext_subtitles(
-                video_file_path, sequential_subtitle_path, output_video_path, font_size
-            )
+        if has_korean:
+            print("🇰🇷 한국어 자막 감지 - 기본 SRT 방식 사용 (맑은 고딕 폰트)")
+            # 한국어에 적합한 폰트 설정
+            font = "C:/Windows/Fonts/malgun.ttf"
+        else:
+            # 영어 자막인 경우 기존 방식 사용
+            font = selected_font if selected_font and os.path.exists(selected_font) else SubtitleConfig.FONTS.get("default")
+        
+        if not font or not os.path.exists(font):
+            print("⚠️ 폰트를 찾을 수 없습니다. 기본 처리를 진행합니다.")
+            font = "arial"  # FFmpeg 기본 폰트 사용
         
         # FFmpeg 명령어 구성
         # Windows에서 경로 이슈를 피하기 위해 절대 경로 사용하고 백슬래시를 슬래시로 변환
         subtitle_path_fixed = sequential_subtitle_path.replace("\\", "/").replace(":", "\\:")
         
-        # 순차적 자막 스타일 사용
-        subtitle_style = get_sequential_subtitle_style(font_size=font_size, enable_outline=True)
+        # 한국어인 경우 특별한 스타일 적용
+        if has_korean:
+            subtitle_style = get_korean_subtitle_style(font_size=font_size, enable_outline=True)
+        else:
+            subtitle_style = get_sequential_subtitle_style(font_size=font_size, enable_outline=True)
+        
+        # FFmpeg 전체 경로 사용
+        ffmpeg_exe = r'C:\Users\oi3oi\AppData\Local\Microsoft\WinGet\Packages\BtbN.FFmpeg.GPL_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-120061-gcfd1f81e7d-win64-gpl\bin\ffmpeg.exe'
         
         ffmpeg_cmd = [
-            "ffmpeg",
+            ffmpeg_exe,
             "-i", video_file_path,  # 입력 비디오
-            "-vf", f"subtitles='{subtitle_path_fixed}':force_style='{subtitle_style}'",  # 순차적 자막 필터
+            "-vf", f"subtitles='{subtitle_path_fixed}':force_style='{subtitle_style}'",  # 자막 필터
             "-c:a", "copy",  # 오디오 스트림 복사 (재인코딩 없음)
             "-y",  # 출력 파일 덮어쓰기
             output_video_path
@@ -664,7 +670,7 @@ async def merge_video_with_tts_and_subtitles(
                     subtitle_path_fixed = split_subtitle_path.replace("\\", "/").replace(":", "\\:")
                     
                     # 한 줄씩 순차적으로 나오는 자막 스타일
-                    subtitle_style = get_sequential_subtitle_style(font_size=18, enable_outline=True)
+                    subtitle_style = get_sequential_subtitle_style(font_size=30, enable_outline=True)
                     
                     # FFmpeg 전체 경로 사용
                     ffmpeg_exe = r'C:\Users\oi3oi\AppData\Local\Microsoft\WinGet\Packages\BtbN.FFmpeg.GPL_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-120061-gcfd1f81e7d-win64-gpl\bin\ffmpeg.exe'
@@ -890,7 +896,7 @@ def create_enhanced_subtitle_file(subtitle_file_path: str, output_path: str, max
         # 실패 시 원본 파일 경로 반환
         return subtitle_file_path
 
-def get_enhanced_subtitle_style(font_size: int = 20, enable_outline: bool = True) -> str:
+def get_enhanced_subtitle_style(font_size: int = 30, enable_outline: bool = True) -> str:
     """
     개선된 자막 스타일 설정 반환
     
@@ -936,21 +942,59 @@ def get_sequential_subtitle_style(font_size: int = 14, enable_outline: bool = Tr
         f"FontSize={font_size}",
         "PrimaryColour=&Hffffff",  # 흰색 텍스트
         "Alignment=2",  # 하단 중앙 정렬
-        "MarginV=30",   # 하단 여백 (줄임)
-        "MarginL=20",   # 좌측 여백 (줄임)
-        "MarginR=20",   # 우측 여백 (줄임)
+        "MarginV=50",   # 하단 여백 (더 크게 설정)
+        "MarginL=50",   # 좌측 여백
+        "MarginR=50",   # 우측 여백
         "WrapStyle=0",  # 스마트 줄바꿈 (한 줄 강제)
         "ScaleX=100",   # 가로 크기
         "ScaleY=100",   # 세로 크기
         "Bold=0",       # 굵은 글씨 해제
+        "PlayResX=1920", # 해상도 X (1920x1080 기준)
+        "PlayResY=1080", # 해상도 Y
     ]
     
     if enable_outline:
         style_options.extend([
             "OutlineColour=&H000000",  # 검은색 외곽선
             "BorderStyle=1",
-            "Outline=2",               # 더 얇은 외곽선
-            "Shadow=1"                 # 적은 그림자 효과
+            "Outline=3",               # 더 두꺼운 외곽선으로 가독성 향상
+            "Shadow=2"                 # 그림자 효과
+        ])
+    
+    return ",".join(style_options)
+
+def get_korean_subtitle_style(font_size: int = 30, enable_outline: bool = True) -> str:
+    """
+    한국어 자막을 위한 특별한 스타일 설정
+    
+    Args:
+        font_size: 폰트 크기 (한국어는 조금 더 크게)
+        enable_outline: 외곽선 사용 여부
+        
+    Returns:
+        str: FFmpeg용 자막 스타일 문자열
+    """
+    style_options = [
+        f"FontSize={font_size}",
+        "FontName=Malgun Gothic",       # 맑은 고딕 지정
+        "PrimaryColour=&Hffffff",       # 흰색 텍스트
+        "Alignment=2",                  # 하단 중앙 정렬
+        "MarginV=60",                   # 하단 여백 (더 크게)
+        "MarginL=50",                   # 좌측 여백 (더 크게)
+        "MarginR=50",                   # 우측 여백 (더 크게)
+        "WrapStyle=0",                  # 스마트 줄바꿈
+        "Bold=0",                       # 굵은 글씨 해제
+        "Italic=0",                     # 기울임 해제
+        "PlayResX=1920",                # 해상도 X (1920x1080 기준)
+        "PlayResY=1080",                # 해상도 Y
+    ]
+    
+    if enable_outline:
+        style_options.extend([
+            "OutlineColour=&H000000",   # 검은색 외곽선
+            "BorderStyle=1",
+            "Outline=4",                # 두꺼운 외곽선 (한국어 가독성)
+            "Shadow=3"                  # 그림자 효과
         ])
     
     return ",".join(style_options)
@@ -1189,7 +1233,7 @@ def create_video_with_drawtext_subtitles(
     video_file_path: str,
     subtitle_file_path: str, 
     output_video_path: str,
-    font_size: int = 20
+    font_size: int = 30
 ) -> SubtitleResult:
     """
     drawtext 필터를 사용하여 한국어 자막을 비디오에 추가
@@ -1243,12 +1287,14 @@ def create_video_with_drawtext_subtitles(
             start_seconds = time_to_seconds(start_time)
             end_seconds = time_to_seconds(end_time)
             
-            # 텍스트 정리
-            clean_text = text.strip().replace('\n', ' ').replace("'", "\\'")
+            # 텍스트 정리 (특수문자 이스케이프)
+            clean_text = text.strip().replace('\n', ' ')
+            # FFmpeg에서 문제가 되는 문자들을 이스케이프
+            clean_text = clean_text.replace("'", "\\'").replace(":", "\\:")
             
             # drawtext 필터 생성
             drawtext_filter = (
-                f"drawtext=fontfile='{korean_font}'"
+                f"drawtext=fontfile=C\\:/Windows/Fonts/malgun.ttf"
                 f":text='{clean_text}'"
                 f":fontcolor=white"
                 f":fontsize={font_size}"
@@ -1262,8 +1308,14 @@ def create_video_with_drawtext_subtitles(
             print("❌ 처리할 자막이 없습니다.")
             return SubtitleResult(success=False, error="처리할 자막이 없습니다.")
         
-        # 모든 drawtext 필터를 체인으로 연결
-        vf_chain = ",".join(drawtext_filters)
+        # 여러 drawtext 필터를 연결할 때는 순차적으로 연결
+        if len(drawtext_filters) == 1:
+            vf_chain = drawtext_filters[0]
+        else:
+            # 첫 번째 필터부터 시작해서 순차적으로 연결
+            vf_chain = drawtext_filters[0]
+            for i in range(1, len(drawtext_filters)):
+                vf_chain += "," + drawtext_filters[i]
         
         # FFmpeg 명령어 실행
         ffmpeg_exe = r'C:\Users\oi3oi\AppData\Local\Microsoft\WinGet\Packages\BtbN.FFmpeg.GPL_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-120061-gcfd1f81e7d-win64-gpl\bin\ffmpeg.exe'
@@ -1314,3 +1366,529 @@ def time_to_seconds(time_str: str) -> float:
     h, m, s_ms = time_str.split(':')
     s, ms = s_ms.split(',')
     return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+def create_sequential_subtitles_from_text(
+    text: str,
+    max_chars_per_line: int = 12,
+    duration_per_char: float = 0.08,
+    gap_between_lines: float = 0.1
+) -> str:
+    """
+    텍스트를 순차적 자막(SRT 형식)으로 변환
+    
+    Args:
+        text: 변환할 텍스트
+        max_chars_per_line: 한 줄당 최대 문자 수
+        duration_per_char: 문자당 지속 시간 (초)
+        gap_between_lines: 줄 간격 (초)
+        
+    Returns:
+        SRT 형식의 자막 문자열
+    """
+    # 텍스트를 줄 단위로 분할
+    words = text.split()
+    lines = []
+    current_line = ""
+    
+    for word in words:
+        if len(current_line + " " + word) <= max_chars_per_line:
+            if current_line:
+                current_line += " " + word
+            else:
+                current_line = word
+        else:
+            if current_line:
+                lines.append(current_line)
+            current_line = word
+    
+    if current_line:
+        lines.append(current_line)
+    
+    # SRT 형식으로 변환
+    srt_content = ""
+    current_time = 0.0
+    
+    for i, line in enumerate(lines):
+        start_time = current_time
+        duration = max(len(line) * duration_per_char, 1.0)  # 최소 1초
+        end_time = start_time + duration
+        
+        # 시간을 SRT 형식으로 변환
+        start_srt = seconds_to_srt_time(start_time)
+        end_srt = seconds_to_srt_time(end_time)
+        
+        srt_content += f"{i + 1}\n"
+        srt_content += f"{start_srt} --> {end_srt}\n"
+        srt_content += f"{line}\n\n"
+        
+        current_time = end_time + gap_between_lines
+    
+    return srt_content
+
+def seconds_to_srt_time(seconds: float) -> str:
+    """초를 SRT 시간 형식(HH:MM:SS,mmm)으로 변환"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    milliseconds = int((seconds % 1) * 1000)
+    
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+
+def add_text_as_subtitles(
+    video_file_path: str,
+    text: str,
+    output_video_path: str,
+    font_size: int = 30
+) -> SubtitleResult:
+    """
+    텍스트를 자막으로 변환하여 비디오에 추가
+    
+    Args:
+        video_file_path: 원본 비디오 파일 경로
+        text: 자막으로 추가할 텍스트
+        output_video_path: 출력 비디오 파일 경로
+        font_size: 폰트 크기
+        
+    Returns:
+        SubtitleResult: 자막 합성 결과
+    """
+    try:
+        # 텍스트를 SRT 형식으로 변환
+        srt_content = create_sequential_subtitles_from_text(text)
+        
+        # 임시 SRT 파일 생성
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.srt', delete=False, encoding='utf-8') as f:
+            f.write(srt_content)
+            temp_srt_path = f.name
+        
+        print(f"📝 생성된 자막 내용:\n{srt_content}")
+        
+        # 자막을 비디오에 추가
+        result = add_subtitles_to_video_ffmpeg(video_file_path, temp_srt_path, output_video_path, font_size)
+        
+        # 임시 파일 정리
+        import os
+        try:
+            os.unlink(temp_srt_path)
+        except:
+            pass
+            
+        return result
+        
+    except Exception as e:
+        error_msg = f"텍스트 자막 처리 중 오류: {e}"
+        print(f"❌ {error_msg}")
+        return SubtitleResult(success=False, error=error_msg)
+
+def detect_and_select_korean_font(text: str) -> tuple[bool, str]:
+    """
+    텍스트에서 한국어를 감지하고 적절한 폰트를 선택
+    
+    Args:
+        text: 감지할 텍스트
+        
+    Returns:
+        tuple[bool, str]: (한국어 포함 여부, 폰트 경로)
+    """
+    # 한국어 문자 감지 (유니코드 범위: 0xAC00-0xD7AF)
+    has_korean = any(0xAC00 <= ord(char) <= 0xD7AF for char in text)
+    
+    if has_korean:
+        # 한국어 폰트 후보들
+        korean_fonts = [
+            "C:/Windows/Fonts/malgun.ttf",   # 맑은 고딕
+            "C:/Windows/Fonts/gulim.ttc",    # 굴림
+            "C:/Windows/Fonts/batang.ttc",   # 바탕
+        ]
+        
+        # 사용 가능한 폰트 찾기
+        for font_path in korean_fonts:
+            if os.path.exists(font_path):
+                return True, font_path
+        
+        # 폰트를 찾을 수 없으면 기본 폰트 사용
+        return True, SubtitleConfig.FONTS.get("default", "")
+    else:
+        # 영어 텍스트
+        return False, SubtitleConfig.FONTS.get("en", "")
+
+def create_tts_synced_subtitle_file(
+    text: str, 
+    tts_duration: float, 
+    output_path: str, 
+    max_chars: int = 4, 
+    min_duration: float = 0.2,
+    gap_duration: float = 0.01
+) -> str:
+    """
+    TTS 음성 길이에 맞춰 자막 타이밍을 빠르고 정밀하게 동기화해서 SRT 파일 생성
+    
+    Args:
+        text: 자막으로 만들 텍스트
+        tts_duration: TTS 음성의 실제 길이 (초)
+        output_path: 출력 SRT 파일 경로
+        max_chars: 한 줄당 최대 문자 수 (매우 짧게)
+        min_duration: 각 줄의 최소 표시 시간 (매우 빠르게)
+        gap_duration: 줄 간격 (매우 짧게)
+        
+    Returns:
+        str: 생성된 SRT 파일 경로
+    """
+    try:
+        print(f"📝 TTS 빠른 동기화 자막 생성 중...")
+        print(f"   텍스트 길이: {len(text)}자")
+        print(f"   TTS 길이: {tts_duration:.2f}초")
+        print(f"   최대 문자 수: {max_chars}자/줄")
+        
+        # 텍스트를 매우 짧은 단위로 분할 (구두점 고려)
+        import re
+        
+        # 문장부호로 먼저 분할
+        sentences = re.split(r'[.!?。]', text)
+        
+        lines = []
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # 각 문장을 매우 짧은 단위로 다시 분할
+            words = sentence.split()
+            current_line = ""
+            
+            for word in words:
+                test_line = current_line + (" " if current_line else "") + word
+                if len(test_line) <= max_chars:
+                    current_line = test_line
+                else:
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = word
+            
+            if current_line:
+                lines.append(current_line)
+        
+        print(f"   총 줄 수: {len(lines)}개")
+        
+        # 빠른 타이밍으로 계산
+        total_gap_time = (len(lines) - 1) * gap_duration
+        available_time = max(tts_duration - total_gap_time, len(lines) * min_duration)
+        
+        # 한국어 읽기 속도에 맞춰 조정 (1초당 5-6자)
+        reading_speed = 0.15  # 1자당 0.15초 (매우 빠르게)
+        
+        # SRT 형식으로 자막 생성
+        srt_content = ""
+        current_time = 0.0
+        
+        for i, line in enumerate(lines):
+            # 글자 수 기반으로 매우 빠른 시간 계산
+            char_based_duration = len(line) * reading_speed
+            line_duration = max(min_duration, char_based_duration)
+            
+            start_time = current_time
+            end_time = start_time + line_duration
+            
+            # 시간을 SRT 형식으로 변환 (밀리초 단위까지 정밀하게)
+            start_srt = seconds_to_srt_time_precise(start_time)
+            end_srt = seconds_to_srt_time_precise(end_time)
+            
+            srt_content += f"{i + 1}\n"
+            srt_content += f"{start_srt} --> {end_srt}\n"
+            srt_content += f"{line}\n\n"
+            
+            # 다음 줄을 위한 시간 업데이트
+            current_time = end_time + gap_duration
+            
+            print(f"   줄 {i+1}: '{line}' ({line_duration:.2f}초)")
+        
+        # SRT 파일 저장
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(srt_content.strip())
+        
+        print(f"✅ TTS 빠른 동기화 자막 생성 완료: {os.path.basename(output_path)}")
+        print(f"   예상 총 시간: {current_time - gap_duration:.2f}초")
+        print(f"   평균 줄당 시간: {(current_time - gap_duration) / len(lines):.2f}초")
+        
+        return output_path
+        
+    except Exception as e:
+        print(f"❌ TTS 빠른 동기화 자막 생성 실패: {e}")
+        return output_path
+
+def seconds_to_srt_time_precise(seconds: float) -> str:
+    """초를 0.1초 단위 정밀한 SRT 시간 형식(HH:MM:SS,mmm)으로 변환"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    # 0.1초 단위로 반올림 (정밀도 향상)
+    milliseconds = int(round((seconds % 1) * 10) * 100)
+    
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+
+async def create_precise_whisper_subtitles(
+    audio_file_path: str,
+    output_dir: str = "./static/subtitles",
+    language: str = "ko",
+    api_key: str = None
+) -> Dict[str, Any]:
+    """
+    Whisper API를 사용하여 정확한 타이밍의 SRT 자막 생성
+    
+    Args:
+        audio_file_path: TTS 오디오 파일 경로
+        output_dir: 출력 디렉토리
+        language: 언어 코드 (ko, en 등)
+        api_key: OpenAI API 키
+        
+    Returns:
+        Dict[str, Any]: 자막 생성 결과
+    """
+    try:
+        if not api_key:
+            from dotenv import load_dotenv
+            load_dotenv()
+            api_key = os.getenv("OPENAI_API_KEY")
+            
+            if not api_key:
+                return {
+                    "success": False,
+                    "error": "OpenAI API 키가 필요합니다."
+                }
+        
+        print(f"🎤 Whisper API로 정밀 타이밍 자막 생성 중...")
+        print(f"   오디오 파일: {os.path.basename(audio_file_path)}")
+        print(f"   언어: {language}")
+        
+        # 출력 디렉토리 생성
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Whisper API 호출 (SRT 형식으로)
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            headers = {
+                "Authorization": f"Bearer {api_key}"
+            }
+            
+            with open(audio_file_path, "rb") as audio_file:
+                files = {
+                    "file": (os.path.basename(audio_file_path), audio_file, "audio/mpeg")
+                }
+                
+                # SRT 형식으로 요청하여 정확한 타이밍 정보 얻기 (0.1초 단위 정밀도)
+                data = {
+                    "model": "whisper-1",
+                    "response_format": "srt",
+                    "language": language,
+                    "temperature": 0.0,  # 더 정확한 결과를 위해 온도를 0으로 설정
+                    "timestamp_granularities": ["segment"]  # 세밀한 타이밍 분석
+                }
+                
+                print(f"   Whisper API 호출 중...")
+                response = await client.post(
+                    "https://api.openai.com/v1/audio/transcriptions",
+                    headers=headers,
+                    files=files,
+                    data=data
+                )
+            
+            if response.status_code != 200:
+                error_msg = f"Whisper API 요청 실패: {response.status_code} - {response.text}"
+                print(f"❌ {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg
+                }
+            
+            # SRT 내용 받기
+            srt_content = response.text.strip()
+            
+            if not srt_content:
+                return {
+                    "success": False,
+                    "error": "Whisper API에서 빈 응답을 받았습니다."
+                }
+            
+            print(f"✅ Whisper API 응답 받음")
+            
+            # 오디오 파일 길이 가져오기 (세분화를 위해)
+            audio_duration = 0.0
+            try:
+                import subprocess
+                result = subprocess.run([
+                    'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+                    '-of', 'csv=p=0', audio_file_path
+                ], capture_output=True, text=True)
+                if result.returncode == 0:
+                    audio_duration = float(result.stdout.strip())
+                    print(f"   오디오 길이: {audio_duration:.1f}초")
+            except Exception as e:
+                print(f"⚠️ 오디오 길이 확인 중 오류: {e}")
+            
+            # 0.1초 단위로 타이밍 세분화
+            if audio_duration > 0:
+                print(f"🔧 0.1초 단위로 타이밍 세분화 중...")
+                srt_content = refine_srt_timing_to_tenths(srt_content, audio_duration)
+                print(f"✅ 타이밍 세분화 완료")
+            
+            # 타임스탬프로 파일명 생성
+            import time
+            timestamp = int(time.time())
+            subtitle_filename = f"whisper_precise_{timestamp}.srt"
+            subtitle_file_path = os.path.join(output_dir, subtitle_filename)
+            
+            # SRT 파일 저장
+            with open(subtitle_file_path, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            
+            # SRT 내용 분석하여 상세 정보 추출
+            lines = srt_content.strip().split('\n\n')
+            subtitle_count = len(lines)
+            
+            # 첫 번째와 마지막 타이밍 추출
+            first_timing = ""
+            last_timing = ""
+            total_text = ""
+            
+            if lines:
+                try:
+                    # 첫 번째 자막의 타이밍
+                    first_block = lines[0].split('\n')
+                    if len(first_block) >= 2:
+                        first_timing = first_block[1].split(' --> ')[0]
+                    
+                    # 마지막 자막의 타이밍
+                    last_block = lines[-1].split('\n')
+                    if len(last_block) >= 2:
+                        last_timing = last_block[1].split(' --> ')[1]
+                    
+                    # 전체 텍스트 추출
+                    for block in lines:
+                        block_lines = block.split('\n')
+                        if len(block_lines) >= 3:
+                            total_text += block_lines[2] + " "
+                    
+                except Exception as e:
+                    print(f"⚠️ SRT 파싱 중 오류: {e}")
+            
+            print(f"✅ Whisper 정밀 자막 생성 완료!")
+            print(f"   파일: {subtitle_filename}")
+            print(f"   자막 개수: {subtitle_count}개")
+            print(f"   시작 시간: {first_timing}")
+            print(f"   종료 시간: {last_timing}")
+            print(f"   텍스트 길이: {len(total_text.strip())}자")
+            
+            return {
+                "success": True,
+                "subtitle_file_path": subtitle_file_path,
+                "subtitle_filename": subtitle_filename,
+                "subtitle_count": subtitle_count,
+                "first_timing": first_timing,
+                "last_timing": last_timing,
+                "transcription": total_text.strip(),
+                "srt_content": srt_content
+            }
+            
+    except Exception as e:
+        error_msg = f"Whisper 정밀 자막 생성 중 오류 발생: {e}"
+        print(f"❌ {error_msg}")
+        return {
+            "success": False,
+            "error": error_msg
+        }
+
+def refine_srt_timing_to_tenths(srt_content: str, audio_duration: float) -> str:
+    """
+    SRT 타이밍을 0.1초 단위로 세분화
+    
+    Args:
+        srt_content: 원본 SRT 내용
+        audio_duration: 오디오 총 길이 (초)
+        
+    Returns:
+        str: 0.1초 단위로 세분화된 SRT 내용
+    """
+    try:
+        lines = srt_content.strip().split('\n\n')
+        refined_blocks = []
+        
+        for i, block in enumerate(lines):
+            block_lines = block.split('\n')
+            if len(block_lines) < 3:
+                continue
+                
+            # 번호, 타이밍, 텍스트 파싱
+            number = block_lines[0]
+            timing = block_lines[1]
+            text = ' '.join(block_lines[2:])
+            
+            # 타이밍 파싱
+            start_time_str, end_time_str = timing.split(' --> ')
+            
+            # 시간을 초로 변환
+            def srt_time_to_seconds(time_str):
+                h, m, s_ms = time_str.split(':')
+                s, ms = s_ms.split(',')
+                return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+            
+            start_seconds = srt_time_to_seconds(start_time_str)
+            end_seconds = srt_time_to_seconds(end_time_str)
+            
+            # 텍스트 길이에 따라 세분화
+            text_length = len(text.replace(' ', ''))
+            duration = end_seconds - start_seconds
+            
+            # 긴 텍스트는 더 세밀하게 나누기
+            if text_length > 30 and duration > 3:
+                # 문장 단위로 나누기
+                sentences = []
+                current_sentence = ""
+                
+                for char in text:
+                    current_sentence += char
+                    if char in '.!?。！？':
+                        if current_sentence.strip():
+                            sentences.append(current_sentence.strip())
+                        current_sentence = ""
+                
+                if current_sentence.strip():
+                    sentences.append(current_sentence.strip())
+                
+                if len(sentences) > 1:
+                    # 문장별로 시간 배분
+                    time_per_sentence = duration / len(sentences)
+                    
+                    for j, sentence in enumerate(sentences):
+                        sentence_start = start_seconds + (j * time_per_sentence)
+                        sentence_end = start_seconds + ((j + 1) * time_per_sentence)
+                        
+                        # 0.1초 단위로 반올림
+                        sentence_start = round(sentence_start, 1)
+                        sentence_end = round(sentence_end, 1)
+                        
+                        refined_number = f"{i + 1}.{j + 1}" if len(sentences) > 1 else str(i + 1)
+                        refined_start = seconds_to_srt_time_precise(sentence_start)
+                        refined_end = seconds_to_srt_time_precise(sentence_end)
+                        
+                        refined_block = f"{refined_number}\n{refined_start} --> {refined_end}\n{sentence}"
+                        refined_blocks.append(refined_block)
+                else:
+                    # 문장이 하나면 원본 유지하되 0.1초 단위로 조정
+                    refined_start = seconds_to_srt_time_precise(round(start_seconds, 1))
+                    refined_end = seconds_to_srt_time_precise(round(end_seconds, 1))
+                    
+                    refined_block = f"{number}\n{refined_start} --> {refined_end}\n{text}"
+                    refined_blocks.append(refined_block)
+            else:
+                # 짧은 텍스트는 0.1초 단위로만 조정
+                refined_start = seconds_to_srt_time_precise(round(start_seconds, 1))
+                refined_end = seconds_to_srt_time_precise(round(end_seconds, 1))
+                
+                refined_block = f"{number}\n{refined_start} --> {refined_end}\n{text}"
+                refined_blocks.append(refined_block)
+        
+        return '\n\n'.join(refined_blocks)
+        
+    except Exception as e:
+        print(f"⚠️ SRT 타이밍 세분화 중 오류: {e}")
+        return srt_content
