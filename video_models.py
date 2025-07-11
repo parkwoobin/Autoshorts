@@ -13,6 +13,7 @@ class VideoConfig:
     RESOLUTION_WIDTH = 768
     RESOLUTION_HEIGHT = 1280
     
+    
     # FPS 설정
     FPS = 24
     DEFAULT_FPS = 24
@@ -34,8 +35,8 @@ class VideoGenerationInput(BaseModel):
     """영상 생성 요청 데이터"""
     image_url: str  # 소스 이미지 URL
     duration: int = 5  # 영상 길이 (초), 기본값 10초
-    resolution: str = "768:1280"  # 해상도, 기본값 720p
-    model: str = "gen4_video"  # Runway 영상 모델
+    resolution: str = "720:1280"  # 해상도, 기본값 720p
+    model: str = "gen4_turbo"  # Runway 영상 모델
     seed: Optional[int] = None  # 시드값 (선택사항)
 
 class VideoGenerationResult(BaseModel):
@@ -51,8 +52,8 @@ class ImageToVideoRequest(BaseModel):
     """이미지 URL 목록을 영상으로 변환하는 요청"""
     image_urls: List[str]  # 이미지 URL 목록
     duration_per_scene: int = 5  # 장면당 영상 길이 (초)
-    resolution: str = "768:1280"  # 해상도 (720p)
-    model: str = "gen3a_turbo"  # Runway 영상 모델
+    resolution: str = "720:1280"  # 해상도 (세로형)
+    model: str = "gen4_turbo"  # Runway 이미지→비디오 모델
 
 class StoryboardVideoOutput(BaseModel):
     """전체 스토리보드 영상 생성 결과"""

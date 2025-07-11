@@ -47,44 +47,134 @@
   4. Pydantic 모델의 alias와 `model_dump(by_alias=True)` 기능을 활용하여, 파이썬 코드(`snake_case`)와 API 요구사항(`camelCase`) 사이의 이름 규칙 차이를 자동으로 변환합니다.
   5. 각 장면의 이미지 생성이 완료되면, 성공/실패 상태와 이미지 URL이 포함된 최종 결과 리스트를 반환합니다.
 
-## 🛠️ 주요 기술 스택
-- **백엔드**: FastAPI, Uvicorn
-- **LLM 연동**: LangChain, OpenAI
-- **이미지 생성**: Runway API (httpx를 통한 직접 호출)
-- **데이터 유효성 검사**: Pydantic
-- **환경 변수 관리**: python-dotenv
+## 🎙️ TTS 내레이션 생성 기능
 
-## 🚀 설정 및 실행 방법
+### 스토리보드 기반 TTS 내레이션 생성
 
-### 저장소 복제:
-```bash
-git clone https://github.com/kimsunggak/shortpilot.git
-cd shortpilot
+**목표**: persona_description, marketing_insights, ad_concept, 스토리보드 scene 설명을 결합하여 자연스러운 TTS 내레이션을 생성합니다.
+
+- **API 엔드포인트**: `POST /video/create-tts-from-storyboard`
+- **요청 데이터**:
+```json
+{
+  "persona_description": "20-30대 직장인 여성으로, 건강한 라이프스타일에 관심이 많은 사람",
+  "marketing_insights": "건강한 재료로 만든 간편식에 대한 니즈가 높음",
+  "ad_concept": "바쁜 일상 속에서도 건강하고 맛있는 식사를 즐길 수 있는 프리미엄 도시락 브랜드",
+  "storyboard_scenes": [
+    {
+      "scene_number": 1,
+      "promptText": "A busy office worker woman looking tired while eating instant food",
+      "duration": 5
+    },
+    {
+      "scene_number": 2,
+      "promptText": "A beautiful premium lunchbox with fresh vegetables and healthy ingredients",
+      "duration": 5
+    }
+  ],
+  "voice_id": "Xb7hH8MSUJpSbSDYk0k2",
+  "voice_gender": "female",
+  "voice_language": "ko"
+}
 ```
 
-### 가상 환경 생성 및 활성화:
-```bash
-python -m venv myenv
-source myenv/bin/activate  # macOS/Linux
-myenv\Scripts\activate  # Windows
+- **작동 순서**:
+  1. **인트로 스크립트 생성**: persona_description, marketing_insights, ad_concept을 결합하여 광고 시작 내레이션 생성
+  2. **장면별 스크립트 생성**: 각 storyboard scene의 promptText를 자연스러운 한국어 내레이션으로 변환
+  3. **아웃트로 스크립트 생성**: 광고 마무리 내레이션 추가
+  4. **TTS 변환**: ElevenLabs API를 통해 각 스크립트를 음성 파일로 변환
+  5. **결과 반환**: 성공한 TTS 파일들의 URL과 메타데이터 반환
+
+- **응답 데이터**:
+```json
+{
+  "success": true,
+  "message": "스토리보드 기반 TTS 내레이션 생성 완료! 5개 오디오 파일 생성",
+  "successful_tts": [
+    {
+      "scene_number": 0,
+      "script_type": "intro",
+      "description": "인트로 - 페르소나, 마케팅 인사이트, 광고 컨셉 소개",
+      "text": "타겟 고객은 20-30대 직장인 여성으로...",
+      "audio_url": "/static/audio/intro_tts_12345.mp3",
+      "duration": 8.5,
+      "file_size": 136000
+    },
+    {
+      "scene_number": 1,
+      "script_type": "scene",
+      "description": "장면 1 설명",
+      "text": "장면 1: 한 여성이 피곤해 보이며 즉석식품을 먹고 있는 모습",
+      "audio_url": "/static/audio/scene1_tts_12346.mp3",
+      "duration": 6.2,
+      "file_size": 99200
+    }
+  ],
+  "summary": {
+    "total_scripts": 5,
+    "successful": 5,
+    "failed": 0,
+    "success_rate": "100.0%"
+  }
+}
 ```
 
-### 의존성 설치:
-```bash
-pip install -r requirements.txt
+### 사용 예시
+
+```python
+import httpx
+import asyncio
+
+async def create_tts_narration():
+    url = "http://localhost:8000/video/create-tts-from-storyboard"
+    
+    data = {
+        "persona_description": "20-30대 직장인 여성으로, 건강한 라이프스타일에 관심이 많은 사람",
+        "marketing_insights": "건강한 재료로 만든 간편식에 대한 니즈가 높음",
+        "ad_concept": "바쁜 일상 속에서도 건강하고 맛있는 식사를 즐길 수 있는 프리미엄 도시락 브랜드",
+        "storyboard_scenes": [
+            {
+                "scene_number": 1,
+                "promptText": "A busy office worker woman looking tired while eating instant food",
+                "duration": 5
+            }
+        ],
+        "voice_id": "Xb7hH8MSUJpSbSDYk0k2",  # Alice (여성, 다국어)
+        "voice_gender": "female",
+        "voice_language": "ko"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=data)
+        result = response.json()
+        
+        print(f"생성된 TTS 파일: {len(result['successful_tts'])}개")
+        for tts in result['successful_tts']:
+            print(f"- {tts['description']}: {tts['audio_url']}")
+
+# 실행
+asyncio.run(create_tts_narration())
 ```
 
-### 환경 변수 설정:
-프로젝트 루트에 `.env` 파일을 생성합니다.
-```
-OPENAI_API_KEY="sk-..."
-RUNWAY_API_KEY="your_runway_api_key"
-```
+### TTS + 비디오 합치기
 
-### 서버 실행:
-```bash
-uvicorn client:app --reload
-```
-서버가 `http://localhost:8000`에서 실행됩니다.
+생성된 TTS 파일들을 비디오와 합치려면:
 
-웹 브라우저에서 `http://localhost:8000/docs`로 접속하면 자동 생성된 API 문서를 확인할 수 있습니다.
+```python
+# 1. 스토리보드 기반 TTS 생성
+tts_response = await client.post("/video/create-tts-from-storyboard", json=storyboard_data)
+tts_scripts = [tts["text"] for tts in tts_response.json()["successful_tts"]]
+
+# 2. TTS와 비디오 합치기
+merge_data = {
+    "video_urls": ["https://example.com/video1.mp4", "https://example.com/video2.mp4"],
+    "text_list": tts_scripts,
+    "transition_type": "fade",
+    "voice_id": "Xb7hH8MSUJpSbSDYk0k2",
+    "tts_volume": 0.8,
+    "video_volume": 0.3
+}
+
+final_response = await client.post("/video/merge-with-tts", json=merge_data)
+final_video_url = final_response.json()["video_url"]
+```

@@ -41,9 +41,9 @@ class UserVideoInput(BaseModel):
 # 스토리보드 생성을 위한 프롬프트 구조 설정 
 class SceneImagePrompt(BaseModel):
     """이미지 생성을 위한 프롬프트 (입력 데이터)"""
-    model: str = "gen4_image"
+    model: str = "gen4_image"  # Runway API 공식 모델 (Text/Image → Image)
     prompt_text: str = Field(..., alias='promptText')
-    ratio: str = "1280:720"  # 기본값 5크레딧 720p, 1920:1080 8크레딧 1080p  
+    ratio: str = "1280:720"  # Runway API 표준 비율 (1280:720 형식)
     reference_images: Optional[List[ReferenceImage]] = Field(None, alias="referenceImages")
     seed: int = 42  # 시드값을 잘 생각해되는게 시드값을 사용하면 동일한 프롬프트로도 매번 다른 이미지를 생성할 수 있음
     model_config = ConfigDict(populate_by_name=True)

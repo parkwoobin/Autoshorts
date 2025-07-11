@@ -243,31 +243,90 @@ async def create_ad_concept(persona: PersonaData, reference_images: List[Referen
     사용자가 앞선 단계에서 생성된 광고 컨셉 프롬프트를 기반으로 광고 제작 아이디어를 작성
     사용자의 광고 아이디어를 기반으로 LLM이 장면별 프롬프트 생성
 """
-# Dict[str,str] 타입힌트 사용 -> 참조 이미지 분석 결과를 딕셔너리 형태로 전달
-async def generate_scene_prompts(user_description: str, enriched_images: List[ReferenceImageWithDescription]) -> StoryboardOutput:
+async def generate_scene_prompts(
+    user_description: str, 
+    enriched_images: List[ReferenceImageWithDescription], 
+    persona_data: dict = None, 
+    ad_concept: str = None
+) -> StoryboardOutput:
+
+    # 페르소나 정보를 문자열로 포맷팅
+    persona_context = ""
+    if persona_data:
+        persona_context = f"""
+### 🎯 Step1에서 생성된 타겟 페르소나 정보
+**타겟 고객:**
+- 국가: {persona_data.get('target_customer', {}).get('country', 'N/A')}
+- 연령대: {persona_data.get('target_customer', {}).get('age_range', 'N/A')}
+- 성별: {persona_data.get('target_customer', {}).get('gender', 'N/A')}
+- 관심사: {persona_data.get('target_customer', {}).get('interests', 'N/A')}
+
+**페르소나 설명:**
+{persona_data.get('persona_description', 'N/A')}
+
+**마케팅 인사이트:**
+{persona_data.get('marketing_insights', 'N/A')}
+"""
+
+    # 광고 컨셉 정보를 문자열로 포맷팅
+    concept_context = ""
+    if ad_concept:
+        concept_context = f"""
+### 💡 Step2에서 생성된 광고 컨셉
+{ad_concept}
+"""
 
     # AI 분석 결과를 바탕으로 프롬프트에 포함시킬 문자열 준비
     reference_info = ""
     if enriched_images:
-        reference_info = "\n### 📸 사용 가능한 참조 이미지 정보 (JSON 형식)\n"
+        # 유효한 참조 이미지만 필터링
+        valid_images = []
         for ref_img in enriched_images:
-            # model_dump_json을 사용해 Pydantic 객체를 읽기 좋은 JSON 문자열로 변환
-            reference_info += f"- @{ref_img.tag}: {ref_img.model_dump_json(indent=2)}\n"
-        reference_info += "\n"
+            if (ref_img.uri and 
+                ref_img.uri != "string" and 
+                ref_img.uri.startswith(("http://", "https://")) and
+                ref_img.tag and 
+                ref_img.tag != "string"):
+                valid_images.append(ref_img)
+            else:
+                print(f"⚠️ 유효하지 않은 참조 이미지 제외: URI='{ref_img.uri}', TAG='{ref_img.tag}'")
+        
+        if valid_images:
+            reference_info = "\n### 📸 사용 가능한 참조 이미지 정보 (JSON 형식)\n"
+            for ref_img in valid_images:
+                # model_dump_json을 사용해 Pydantic 객체를 읽기 좋은 JSON 문자열로 변환
+                reference_info += f"- @{ref_img.tag}: {ref_img.model_dump_json(indent=2)}\n"
+            reference_info += "\n"
+        else:
+            print("⚠️ 모든 참조 이미지가 유효하지 않습니다. 텍스트 프롬프트만 사용합니다.")
+            reference_info = ""
 
-    # 시스템 메시지: AI의 역할과 데이터 '변환' 지시사항 강화
-    # persona_utils.py 파일의 generate_scene_prompts 함수 내부
-
+    # 시스템 메시지: AI의 역할과 데이터 통합 지시사항
     system_template = """
     당신은 AI 스토리보드 생성 전문가이자, AI 이미지 생성 프롬프트 엔지니어입니다.
-    사용자의 아이디어와 아래 JSON 형식으로 제공된 참조 이미지 정보를 분석하여, 3개의 장면으로 구성된 완전한 `StoryboardOutput` JSON 객체를 생성해야 합니다.
+    사용자가 Step1에서 생성한 페르소나와 Step2에서 생성한 광고 컨셉, 그리고 Step3에서 입력한 아이디어를 종합적으로 분석하여, 일관성 있고 타겟팅된 3개의 장면으로 구성된 완전한 `StoryboardOutput` JSON 객체를 생성해야 합니다.
 
-    ### ⭐ 가장 중요한 작성 원칙
+    ### 🚨🚨🚨 최우선 원칙: 전체 워크플로우 데이터 통합 🚨🚨🚨
+    - **Step1 페르소나 데이터**: 타겟 고객의 특성, 관심사, 인구통계학적 정보를 모든 장면에 반영
+    - **Step2 광고 컨셉**: 생성된 광고 전략과 마케팅 인사이트를 장면 설계에 통합
+    - **Step3 사용자 아이디어**: 사용자가 직접 입력한 구체적인 아이디어를 최종 실행 방향으로 적용
+    - **모든 단계의 데이터가 서로 연결되고 일관성을 유지해야 합니다**
+
+    ### ⭐ 통합 원칙: 3단계 데이터 융합
+    1. **페르소나 반영**: 타겟 고객의 연령대, 성별, 관심사, 문화적 배경이 모든 장면에 자연스럽게 녹아들어야 함
+    2. **광고 컨셉 활용**: Step2에서 생성된 크리에이티브 컨셉과 핵심 메시지가 시각적으로 구현되어야 함
+    3. **사용자 아이디어 실현**: Step3에서 입력한 구체적인 아이디어가 장면의 핵심 요소로 구현되어야 함
+
+    ### 🎯 장면별 설계 원칙
+    **장면 1 (도입)**: 타겟 페르소나가 공감할 수 있는 상황/문제 제시
+    **장면 2 (전개)**: 사용자 아이디어의 핵심 요소를 광고 컨셉에 맞게 시각화
+    **장면 3 (클라이맥스)**: 페르소나의 욕구를 충족시키는 해결책/결과 제시
+
+    ### ⭐ 작성 원칙
     - **`prompt_text`는 영어로 작성**: `scenes` 안의 모든 `prompt_text` 필드는 이미지 생성 AI가 더 잘 이해할 수 있도록 **반드시 영어로 작성**해주세요.
     - **나머지 필드는 한국어로 작성**: `video_concept`과 같은 다른 모든 텍스트 필드는 한국어로 작성합니다.
 
-    ### 🚨 가장 중요한 규칙: 참조 이미지 처리 방법
-
+    ### 🚨 참조 이미지 처리 방법
     **1. 창의적 판단 우선 (Creative Judgment First):**
     - 참조 이미지 사용은 **선택 사항**이며, 필수가 아닙니다.
     - 오직 해당 장면의 아이디어를 **더욱 강화하거나 명확하게 전달**하는 데 도움이 된다고 판단될 때만 이미지를 사용하세요.
@@ -288,35 +347,12 @@ async def generate_scene_prompts(user_description: str, enriched_images: List[Re
     - `estimated_duration` (필수): 전체 영상의 예상 길이 (초 단위 정수, 장면당 5초로 계산).
     - `video_concept` (필수): 광고 영상의 핵심 컨셉을 1~2문장으로 요약.
 
-    #### 전체 출력 예시 (이 구조와 필드 이름을 반드시 따르세요):
-    {{
-    "scenes": [
-        {{
-        "model": "gen4_image",
-        "prompt_text": "A modern, minimalist cafe exterior with natural sunlight.@background",
-        "ratio": "1280:720",
-        "reference_images": [
-            {{
-            "uri": "https://...",
-            "tag": "background"
-            }}
-        ],
-        "seed": 42,
-        }},
-        {{
-        "model": "gen4_image",
-        "prompt_text": "A close-up shot of @product, a delicious-looking jokbal dish.",
-        "ratio": "1280:720",
-        "seed": 42
-        }}
-    ],
-    "total_scenes": 2,
-    "estimated_duration": 10,
-    "video_concept": "바쁜 일상 속, 맛있는 음식과 함께하는 여유로운 순간을 통해 얻는 행복을 표현합니다."
-    }}
-
     [최종 확인 지시]
-    출력하기 전, 당신이 생성한 JSON이 `scenes`, `total_scenes`, `estimated_duration`, `video_concept` 필드를 모두 포함하고 있는지 반드시 다시 한번 확인하십시오.
+    출력하기 전, 당신이 생성한 JSON이 다음 사항을 모두 충족하는지 반드시 확인하십시오:
+    - **Step1 페르소나의 타겟 고객 특성이 모든 장면에 반영되었습니까?**
+    - **Step2 광고 컨셉의 핵심 메시지가 시각적으로 구현되었습니까?**
+    - **Step3 사용자 아이디어가 장면의 핵심 요소로 실현되었습니까?**
+    - **3개 장면이 서로 연결되어 하나의 완전한 스토리를 구성합니까?**
     - `reference_images` 리스트에 객체가 있다면, 같은 장면의 `prompt_text`에 해당 `@태그`가 반드시 포함되어 있습니까?
     - 참조 이미지를 사용하지 않는 장면에는 `reference_images` 키가 없는지 확인했습니까?
     """
@@ -324,11 +360,35 @@ async def generate_scene_prompts(user_description: str, enriched_images: List[Re
 
     # 사용자 메시지 템플릿
     human_template = """
-    ### 💬 사용자의 광고 아이디어
-    {user_description}
+    ### 🎯 Step1: 타겟 페르소나 정보 (필수 반영)
+    {persona_context}
+    
+    ### 💡 Step2: 광고 컨셉 정보 (필수 반영)
+    {concept_context}
+    
+    ### ✏️ Step3: 사용자 최종 아이디어 (실행 방향)
+    사용자가 입력한 구체적인 아이디어: "{user_description}"
+    
+    ### 📸 참조 이미지 정보 (선택적 활용)
     {reference_info}
+    
+    ### 🚨 통합 지시사항 🚨
+    위의 모든 정보를 종합하여 다음과 같이 스토리보드를 생성하세요:
+    
+    1. **페르소나 타겟팅**: Step1의 타겟 고객 특성(연령, 성별, 관심사)이 모든 장면에 반영되어야 합니다.
+    2. **컨셉 일관성**: Step2의 광고 컨셉과 마케팅 전략이 시각적으로 구현되어야 합니다.
+    3. **아이디어 실현**: Step3의 사용자 아이디어가 핵심 스토리라인으로 실행되어야 합니다.
+    
+    **모든 장면이 서로 연결되어 타겟 페르소나에게 어필하는 완전한 광고 스토리를 만들어주세요.**
+    
     ---
-    위 아이디어와 참조 이미지 정보를 바탕으로, 지침에 따라 완전한 스토리보드 JSON 객체를 생성해주십시오.
+    🎬 최종 확인 체크리스트:
+    ✅ 페르소나의 타겟 고객 특성이 모든 장면에 반영되었습니까?
+    ✅ 광고 컨셉의 핵심 메시지가 시각적으로 구현되었습니까?
+    ✅ 사용자 아이디어가 스토리의 핵심으로 실현되었습니까?
+    ✅ 3개 장면이 하나의 완전한 광고 스토리를 구성합니까?
+    
+    위 모든 항목을 확인한 후, 통합된 완전한 스토리보드 JSON 객체를 생성해주십시오.
     """
     human_message_prompt = HumanMessagePromptTemplate.from_template(human_template)
     
@@ -337,14 +397,32 @@ async def generate_scene_prompts(user_description: str, enriched_images: List[Re
     structured_llm = text_llm.with_structured_output(StoryboardOutput)
     storyboard_chain = storyboard_prompt | structured_llm
 
-    print("🎬 장면별 프롬프트 생성 중...")
+    print(f"🎬 장면별 프롬프트 생성 중... 사용자 입력: '{user_description}'")
+    
+    # 사용자 입력을 로그로 명확히 출력
+    print(f"📝 실제 전달되는 사용자 입력: {user_description}")
+    print(f"📝 사용자 입력 타입: {type(user_description)}")
+    print(f"📝 사용자 입력 길이: {len(user_description) if user_description else 0} 글자")
+    print(f"📸 참조 이미지 개수: {len(enriched_images) if enriched_images else 0}")
+    
+    # 페르소나 및 컨셉 정보 로그 출력
+    print(f"🎯 페르소나 데이터 존재: {bool(persona_data)}")
+    if persona_data:
+        print(f"   타겟 고객 정보: {persona_data.get('target_customer', {})}")
+    print(f"💡 광고 컨셉 존재: {bool(ad_concept)}")
+    if ad_concept:
+        print(f"   광고 컨셉 미리보기: {ad_concept[:100]}...")
     
     result = await storyboard_chain.ainvoke({
         "user_description": user_description,
         "reference_info": reference_info,
+        "persona_context": persona_context,
+        "concept_context": concept_context,
     })
 
     print("✅ 장면별 프롬프트 생성 완료")
+    print(f"📊 생성된 장면 수: {result.total_scenes}")
+    print(f"🎯 첫 번째 장면 프롬프트: {result.scenes[0].prompt_text if result.scenes else 'None'}")
     return result
 
 # ==================================================================================
@@ -355,7 +433,7 @@ async def generate_images_sequentially(
 ) -> List[Dict]:
     """여러 장면 프롬프트를 받아 '직렬'로 이미지 생성을 요청하고 모든 결과를 반환합니다."""
     
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json","X-Runway-Version": "2024-11-06"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "X-Runway-Version": "2024-11-06"}
     base_url = "https://api.dev.runwayml.com/v1"
     
     generated_images = []
@@ -364,18 +442,52 @@ async def generate_images_sequentially(
     print(f"\n🚀 총 {total_scenes}개의 이미지 생성을 직렬로 시작합니다...")
 
     for i, scene in enumerate(scenes):
-        print(f"\n--- [장면 {i+1}/{total_scenes}] 생성 시작 ---")
+        print(f"\n--- [장면 {i+1}/{total_scenes}] 이미지 생성 시작 ---")
         
         payload = scene.model_dump(by_alias=True, exclude_none=True)
         
+        # 🔧 Runway API 호환성을 위한 필수 값들 강제 수정
+        # 1. model 필드 강제 고정 - 텍스트-이미지 생성용 모델로 변경
+        payload["model"] = "gen4_image"
+        print(f"🔧 API 요청 전 model 강제 설정: {payload['model']}")
+        
+        # 2. ratio 값 강제 수정
+        if payload.get("ratio") not in ["1280:720", "720:1280", "1024:1024"]:
+            old_ratio = payload.get("ratio", "unknown")
+            payload["ratio"] = "1280:720"  # 기본값으로 강제 변경
+            print(f"🔄 API 요청 전 ratio 수정: {old_ratio} → {payload['ratio']}")
+        
+        # 잘못된 참조 이미지 필터링 및 안전장치
         if payload.get("referenceImages"):
+            valid_ref_images = []
             for ref_img_dict in payload["referenceImages"]:
-                ref_img_dict["weight"] = 0.5
+                # 'string'이나 잘못된 URI 필터링
+                if (ref_img_dict.get("uri") and 
+                    ref_img_dict.get("uri") != "string" and 
+                    ref_img_dict.get("uri").startswith(("http://", "https://")) and
+                    ref_img_dict.get("tag") and 
+                    ref_img_dict.get("tag") != "string"):
+                    ref_img_dict["weight"] = 0.5
+                    valid_ref_images.append(ref_img_dict)
+                else:
+                    print(f"⚠️ 잘못된 참조 이미지 제외: {ref_img_dict.get('uri')}")
+            
+            # 유효한 참조 이미지가 없으면 referenceImages 키 제거
+            if valid_ref_images:
+                payload["referenceImages"] = valid_ref_images
+            else:
+                print("🔧 모든 참조 이미지가 유효하지 않아 텍스트 프롬프트만 사용합니다.")
+                payload.pop("referenceImages", None)
+        else:
+            # 참조 이미지가 없거나 빈 배열인 경우 키 자체를 제거
+            print("🔧 참조 이미지가 없어 텍스트 프롬프트만 사용합니다.")
+            payload.pop("referenceImages", None)
 
         async with httpx.AsyncClient(timeout=180) as client:
             try:
                 # 1. 작업 요청
                 print(f"📤 Runway API 요청: {scene.prompt_text[:40]}...")
+                print(f"🔍 전송할 payload: {payload}")  # 디버깅용 출력
                 response = await client.post(f"{base_url}/text_to_image", headers=headers, json=payload)
                 
                 if response.status_code != 200:
@@ -391,14 +503,15 @@ async def generate_images_sequentially(
                     status_data = status_response.json()
                     status = status_data.get("status")
                     progress = status_data.get("progress", 0)
-                    print(f"   상태: {status}, 진행도: {progress}%")
+                    print(f"   상태: {status}, 진행도: {progress}%")
 
                     if status == "SUCCEEDED":
                         print(f"✅ [장면 {i+1}] 이미지 생성 완료!")
                         generated_images.append({
                             "scene_index": i + 1,
                             "status": "success",
-                            "image_url": status_data.get("output", [None])[0],
+                            "url": status_data.get("output", [None])[0],  # 이미지 URL로 저장
+                            "image_url": status_data.get("output", [None])[0],  # 호환성을 위한 추가 키
                             "prompt": scene.prompt_text
                         })
                         break
@@ -418,8 +531,8 @@ async def generate_images_sequentially(
 
     print("\n🎉 모든 이미지 생성 작업 완료!")
     return generated_images
-# ==================================================================================
 
+# ==================================================================================
 """참조 이미지 분석 : 참조 이미지를 분석해 광고 콘셉트 및 크리에이티브 방향성을 도출"""
 async def analyze_reference_images(reference_images: List[ReferenceImage]) -> List[dict]:
     if not reference_images:
@@ -428,6 +541,15 @@ async def analyze_reference_images(reference_images: List[ReferenceImage]) -> Li
     analyzed_result = []
     
     for ref_image in reference_images:
+        # 유효하지 않은 URI 필터링 (string, 빈 값, 잘못된 URL 등)
+        if (not ref_image.uri or 
+            ref_image.uri == "string" or 
+            not ref_image.uri.startswith(("http://", "https://")) or
+            not ref_image.tag or 
+            ref_image.tag == "string"):
+            print(f"⚠️ 유효하지 않은 참조 이미지 건너뛰기: URI='{ref_image.uri}', TAG='{ref_image.tag}'")
+            continue
+            
         try:
             message = HumanMessage(
                 content=[
