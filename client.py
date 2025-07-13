@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Body
 from typing import List, Optional
 import os
@@ -140,7 +143,7 @@ async def generate_storyboard_prompts():
     user_input_text = user_input["user_description"]
     
     # 🚨 사용자 입력 검증
-    if user_input_text in ["string", "", "test", "테스트"]:
+    if user_input_text in ["string", ""]:
         print("⚠️ 경고: 더미 데이터나 빈 값이 감지되었습니다!")
         print(f"   입력값: '{user_input_text}'")
         print("   실제 광고 아이디어를 입력해주세요.")
@@ -385,7 +388,10 @@ async def health_check():
             "step2": "POST /step2/ad-concept - 광고 컨셉 생성",  
             "step3": "POST /step3/user-video-input - 사용자 아이디어 입력 및 스토리보드 생성",
             "step4": "POST /step4/generate-images - 이미지 생성",
-            "step5": "POST /video/create-tts-from-storyboard - TTS 대본 및 오디오 생성"
+            "step5": "POST /video/generate-videos - 개별 영상 생성",
+            "step6": "POST /video/merge-with-transitions - 영상 합치기",
+            "step7": "POST /video/create-tts-from-storyboard - TTS 대본 및 오디오 생성",
+            "step8": "POST /video/generate-subtitles + merge-with-tts-subtitles - 자막 생성 및 최종 합치기"
         }
     }
 

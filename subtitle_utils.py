@@ -4,6 +4,7 @@ Whisper AI를 이용한 자막 생성 및 FFmpeg를 통한 자막 합성 유틸�
 import os
 import tempfile
 import asyncio
+import time
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 import subprocess
@@ -864,10 +865,10 @@ def create_enhanced_subtitle_file(subtitle_file_path: str, output_path: str, max
             
             for word in words:
                 # 현재 줄에 단어를 추가했을 때 길이 확인
-                test_line = current_line + (" " if current_line else "") + word
+                potential_line = current_line + (" " if current_line else "") + word
                 
-                if len(test_line) <= max_chars_per_line:
-                    current_line = test_line
+                if len(potential_line) <= max_chars_per_line:
+                    current_line = potential_line
                 else:
                     # 현재 줄이 비어있지 않으면 저장
                     if current_line:
@@ -1059,9 +1060,9 @@ def create_single_line_subtitle_file(subtitle_file_path: str, output_path: str, 
             current_chunk = ""
             
             for word in words:
-                test_chunk = current_chunk + (" " if current_chunk else "") + word
-                if len(test_chunk) <= max_chars:
-                    current_chunk = test_chunk
+                potential_chunk = current_chunk + (" " if current_chunk else "") + word
+                if len(potential_chunk) <= max_chars:
+                    current_chunk = potential_chunk
                 else:
                     if current_chunk:
                         chunks.append(current_chunk)
@@ -1178,9 +1179,9 @@ def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, m
             current_line = ""
             
             for word in words:
-                test_line = current_line + (" " if current_line else "") + word
-                if len(test_line) <= max_chars:
-                    current_line = test_line
+                potential_line = current_line + (" " if current_line else "") + word
+                if len(potential_line) <= max_chars:
+                    current_line = potential_line
                 else:
                     if current_line:
                         lines.append(current_line)
@@ -1558,9 +1559,9 @@ def create_tts_synced_subtitle_file(
             current_line = ""
             
             for word in words:
-                test_line = current_line + (" " if current_line else "") + word
-                if len(test_line) <= max_chars:
-                    current_line = test_line
+                potential_line = current_line + (" " if current_line else "") + word
+                if len(potential_line) <= max_chars:
+                    current_line = potential_line
                 else:
                     if current_line:
                         lines.append(current_line)
@@ -1892,3 +1893,183 @@ def refine_srt_timing_to_tenths(srt_content: str, audio_duration: float) -> str:
     except Exception as e:
         print(f"⚠️ SRT 타이밍 세분화 중 오류: {e}")
         return srt_content
+
+def create_srt_list_file(srt_files: List[str], output_path: str = "srt_list.txt") -> str:
+    """
+    SRT 파일 목록을 txt 파일로 저장 (tts_list.txt와 동일한 방식)
+    
+    Args:
+        srt_files: SRT 파일 경로 리스트
+        output_path: 출력 txt 파일 경로
+        
+    Returns:
+        str: 생성된 txt 파일 경로
+    """
+    try:
+        print(f"📝 SRT 목록 파일 생성 중...")
+        print(f"   파일 개수: {len(srt_files)}개")
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            for srt_file in srt_files:
+                f.write(f"{srt_file}\n")
+        
+        print(f"✅ SRT 목록 파일 생성 완료: {output_path}")
+        return output_path
+        
+    except Exception as e:
+        print(f"❌ SRT 목록 파일 생성 실패: {e}")
+        return output_path
+
+def read_srt_list_file(list_file_path: str = "srt_list.txt") -> List[str]:
+    """
+    SRT 목록 파일을 읽어서 파일 경로 리스트 반환
+    
+    Args:
+        list_file_path: SRT 목록 txt 파일 경로
+        
+    Returns:
+        List[str]: SRT 파일 경로 리스트
+    """
+    try:
+        if not os.path.exists(list_file_path):
+            print(f"⚠️ SRT 목록 파일을 찾을 수 없습니다: {list_file_path}")
+            return []
+        
+        srt_files = []
+        with open(list_file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and os.path.exists(line):
+                    srt_files.append(line)
+                elif line:
+                    print(f"⚠️ SRT 파일을 찾을 수 없습니다: {line}")
+        
+        print(f"📁 SRT 목록 파일에서 {len(srt_files)}개 파일 읽음")
+        return srt_files
+        
+    except Exception as e:
+        print(f"❌ SRT 목록 파일 읽기 실패: {e}")
+        return []
+
+def merge_srt_files_sequentially(srt_list_file: str = "srt_list.txt", output_path: str = None) -> str:
+    """
+    srt_list.txt에서 SRT 파일들을 순서대로 읽어와서 하나의 SRT 파일로 합치기
+    
+    Args:
+        srt_list_file: SRT 목록 txt 파일 경로
+        output_path: 출력 SRT 파일 경로 (None이면 자동 생성)
+        
+    Returns:
+        str: 합쳐진 SRT 파일 경로
+    """
+    try:
+        print(f"🔄 SRT 파일들을 순서대로 합치는 중...")
+        
+        # SRT 목록 파일에서 파일 경로들 읽기
+        srt_files = read_srt_list_file(srt_list_file)
+        
+        if not srt_files:
+            raise Exception("합칠 SRT 파일이 없습니다.")
+        
+        # 출력 파일 경로 생성
+        if not output_path:
+            timestamp = int(time.time())
+            output_path = f"./static/subtitles/merged_subtitles_{timestamp}.srt"
+        
+        # 출력 디렉토리 생성
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        print(f"   입력 SRT 파일: {len(srt_files)}개")
+        print(f"   출력 파일: {os.path.basename(output_path)}")
+        
+        merged_content = ""
+        subtitle_number = 1
+        current_time_offset = 0.0  # 누적 시간 오프셋
+        
+        for i, srt_file in enumerate(srt_files):
+            print(f"   처리 중: {os.path.basename(srt_file)} (파일 {i+1}/{len(srt_files)})")
+            
+            # SRT 파일 읽기
+            with open(srt_file, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+            
+            if not content:
+                print(f"   ⚠️ 빈 파일 건너뜀: {os.path.basename(srt_file)}")
+                continue
+            
+            # SRT 형식 파싱
+            import re
+            subtitle_pattern = r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3})\n(.+?)(?=\n\n|\n\d+\n|\Z)'
+            matches = re.findall(subtitle_pattern, content, re.DOTALL)
+            
+            file_max_end_time = 0.0
+            
+            for number, timing, text in matches:
+                # 시간 정보 파싱 및 오프셋 적용
+                start_time_str, end_time_str = timing.split(' --> ')
+                
+                start_seconds = srt_time_to_seconds(start_time_str) + current_time_offset
+                end_seconds = srt_time_to_seconds(end_time_str) + current_time_offset
+                
+                file_max_end_time = max(file_max_end_time, end_seconds)
+                
+                # 새로운 시간 형식으로 변환
+                new_start_time = seconds_to_srt_time_precise(start_seconds)
+                new_end_time = seconds_to_srt_time_precise(end_seconds)
+                
+                # 합쳐진 자막에 추가
+                merged_content += f"{subtitle_number}\n"
+                merged_content += f"{new_start_time} --> {new_end_time}\n"
+                merged_content += text.strip()
+                merged_content += "\n\n"
+                
+                subtitle_number += 1
+            
+            # 다음 파일을 위한 시간 오프셋 업데이트 (0.5초 간격 추가)
+            current_time_offset = file_max_end_time + 0.5
+            
+            print(f"   ✅ 완료: {len(matches)}개 자막 추가, 누적 시간: {current_time_offset:.1f}초")
+        
+        # 합쳐진 SRT 파일 저장
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(merged_content.strip())
+        
+        print(f"✅ SRT 파일 합치기 완료!")
+        print(f"   출력 파일: {output_path}")
+        print(f"   총 자막 개수: {subtitle_number - 1}개")
+        print(f"   총 길이: {current_time_offset:.1f}초")
+        
+        return output_path
+        
+    except Exception as e:
+        error_msg = f"SRT 파일 합치기 실패: {e}"
+        print(f"❌ {error_msg}")
+        raise Exception(error_msg)
+
+def srt_time_to_seconds(time_str: str) -> float:
+    """SRT 시간 형식(HH:MM:SS,mmm)을 초로 변환"""
+    h, m, s_ms = time_str.split(':')
+    s, ms = s_ms.split(',')
+    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+def cleanup_srt_list_file(list_file_path: str = "srt_list.txt") -> bool:
+    """
+    SRT 목록 파일 삭제 (처리 완료 후 정리)
+    
+    Args:
+        list_file_path: 삭제할 SRT 목록 txt 파일 경로
+        
+    Returns:
+        bool: 삭제 성공 여부
+    """
+    try:
+        if os.path.exists(list_file_path):
+            os.remove(list_file_path)
+            print(f"🗑️ SRT 목록 파일 삭제 완료: {list_file_path}")
+            return True
+        else:
+            print(f"⚠️ 삭제할 SRT 목록 파일이 없습니다: {list_file_path}")
+            return False
+    except Exception as e:
+        print(f"❌ SRT 목록 파일 삭제 실패: {e}")
+        return False

@@ -546,7 +546,7 @@ class StoryboardToTTSGenerator:
         marketing_insights: str,
         ad_concept: str,
         voice_id: str,
-        output_dir: str = "tts_outputs"
+        output_dir: str = "static/audio"
     ) -> Dict:
         """client.py API와 호환되는 스토리보드 → TTS 변환 메서드"""
         
@@ -588,8 +588,8 @@ class StoryboardToTTSGenerator:
             
             # TTS 오디오 생성
             print(f"🎵 ElevenLabs TTS 오디오 생성 중...")
-            tts_results = await self.generate_tts_audio_batch(
-                scripts=tts_scripts,
+            tts_results = await self.generate_tts_audio(
+                tts_scripts=tts_scripts,
                 voice_id=voice_id,
                 output_dir=output_dir
             )
@@ -628,6 +628,37 @@ class StoryboardToTTSGenerator:
             print(f"   총 장면: {len(scenes)}개")
             print(f"   성공한 TTS: {len(successful_tts)}개")
             print(f"   실패한 TTS: {len(failed_tts)}개")
+            
+            # 🔥🔥🔥 TTS 생성 완료 후 tts_list.txt 파일 생성! 🔥🔥🔥
+            print(f"📝 tts_list.txt 파일 생성 중...")
+            
+            tts_list_file = "tts_list.txt"
+            tts_file_paths = []
+            
+            # 성공한 TTS 결과에서 파일 경로 수집
+            for result_item in final_results:
+                if result_item.get("success") and "audio_file_path" in result_item:
+                    file_path = result_item["audio_file_path"]
+                    tts_file_paths.append(file_path)
+                    print(f"   수집: {os.path.basename(file_path)}")
+            
+            # txt 파일에 저장
+            try:
+                with open(tts_list_file, 'w', encoding='utf-8') as f:
+                    for file_path in tts_file_paths:
+                        f.write(file_path + '\n')
+                
+                print(f"✅✅✅ storyboard_to_tts.py에서 tts_list.txt 생성 성공! ✅✅✅")
+                print(f"   파일 위치: {os.path.abspath(tts_list_file)}")
+                print(f"   저장된 TTS 파일 수: {len(tts_file_paths)}")
+                
+                if os.path.exists(tts_list_file):
+                    file_size = os.path.getsize(tts_list_file)
+                    print(f"   파일 크기: {file_size} bytes")
+                
+            except Exception as txt_error:
+                print(f"❌❌❌ tts_list.txt 생성 실패! ❌❌❌")
+                print(f"   오류: {txt_error}")
             
             return {
                 "success": True,
@@ -806,7 +837,7 @@ async def generate_complete_tts_from_scratch(
     ad_concept: str,
     storyboard_scenes: List[Dict],
     voice_id: str = None,  # None이면 랜덤 선택
-    output_dir: str = "tts_outputs"
+    output_dir: str = "static/audio"
 ) -> Dict:
     """client.py API와 호환되는 TTS 완전 생성 함수"""
     

@@ -178,17 +178,23 @@ async def create_tts_audio(
             
             # 출력 디렉토리 설정
             if output_dir:
-                output_path = Path(output_dir)
+                output_path = Path(output_dir).resolve()  # 절대 경로로 변환
                 output_path.mkdir(parents=True, exist_ok=True)
+                print(f"🗂️ TTS 출력 디렉토리: {output_path} (파라미터 제공됨)")
             else:
-                output_path = Path(tempfile.gettempdir()) / "tts_audio"
+                # 기본값을 static/audio로 설정 (절대 경로)
+                current_dir = Path.cwd()
+                output_path = current_dir / "static" / "audio"
                 output_path.mkdir(parents=True, exist_ok=True)
+                print(f"🗂️ TTS 출력 디렉토리: {output_path} (기본값 사용)")
             
             # 고유한 파일명 생성 (타임스탬프 기반)
             import time
             timestamp = int(time.time() * 1000)
             audio_filename = f"tts_{timestamp}.mp3"
             audio_file_path = output_path / audio_filename
+            
+            print(f"💾 TTS 파일 저장 경로: {audio_file_path}")
             
             # 오디오 데이터를 파일로 저장
             with open(audio_file_path, "wb") as audio_file:
@@ -395,7 +401,13 @@ def get_elevenlabs_api_key() -> Optional[str]:
     # .env 파일 로드
     load_dotenv()
     
-    return os.getenv("ELEVNLABS_API_KEY")
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        print("❌ ELEVENLABS_API_KEY 환경변수가 설정되지 않았습니다.")
+        print("   .env 파일에 다음과 같이 설정해주세요:")
+        print("   ELEVENLABS_API_KEY=your_api_key_here")
+    
+    return api_key
 
 async def create_voice_sample(
     voice_id: str,
@@ -480,33 +492,33 @@ async def create_voice_samples_by_language(
         sample_text = default_texts.get(language, default_texts["ko"])
     
     # 언어별 음성 필터링
-    voices_to_test = get_voices_by_language(language)
+    voices_to_sample = get_voices_by_language(language)
     
     # 성별 필터링
     if gender_preference:
         filtered_voices = {}
-        for voice_id, voice_name in voices_to_test.items():
+        for voice_id, voice_name in voices_to_sample.items():
             if gender_preference == "female" and "여성" in voice_name:
                 filtered_voices[voice_id] = voice_name
             elif gender_preference == "male" and "남성" in voice_name:
                 filtered_voices[voice_id] = voice_name
         
         if filtered_voices:
-            voices_to_test = filtered_voices
+            voices_to_sample = filtered_voices
     
     # 최대 샘플 수 제한
-    if len(voices_to_test) > max_samples:
-        print(f"⚠️ 너무 많은 음성({len(voices_to_test)})입니다. 상위 {max_samples}개만 생성합니다.")
-        voices_to_test = dict(list(voices_to_test.items())[:max_samples])
+    if len(voices_to_sample) > max_samples:
+        print(f"⚠️ 너무 많은 음성({len(voices_to_sample)})입니다. 상위 {max_samples}개만 생성합니다.")
+        voices_to_sample = dict(list(voices_to_sample.items())[:max_samples])
     
-    print(f"🎙️ {len(voices_to_test)}개 음성으로 샘플 생성 시작...")
+    print(f"🎙️ {len(voices_to_sample)}개 음성으로 샘플 생성 시작...")
     print(f"   언어: {language}")
     print(f"   성별: {gender_preference or '전체'}")
     print(f"   샘플 텍스트: {sample_text[:50]}...")
     
     results = {}
-    for i, (voice_id, voice_name) in enumerate(voices_to_test.items(), 1):
-        print(f"\n🔊 [{i}/{len(voices_to_test)}] {voice_name} 샘플 생성 중...")
+    for i, (voice_id, voice_name) in enumerate(voices_to_sample.items(), 1):
+        print(f"\n🔊 [{i}/{len(voices_to_sample)}] {voice_name} 샘플 생성 중...")
         
         result = await create_voice_sample(
             voice_id=voice_id,
@@ -526,7 +538,7 @@ async def create_voice_samples_by_language(
         await asyncio.sleep(1)
     
     successful_count = len([r for r in results.values() if r.success])
-    print(f"\n🎉 음성 샘플 생성 완료! 총 {successful_count}/{len(voices_to_test)}개 성공")
+    print(f"\n🎉 음성 샘플 생성 완료! 총 {successful_count}/{len(voices_to_sample)}개 성공")
     
     return results
 

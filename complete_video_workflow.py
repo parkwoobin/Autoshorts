@@ -1,11 +1,17 @@
 """
 스토리보드 → Runway 영상 → TTS → 자막 → 최종 영상 통합 워크플로우
 """
+from dotenv import load_dotenv
+load_dotenv()
+
 import asyncio
 import os
+import subprocess
+import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import tempfile
+import httpx
 
 # 기존 모듈들 import
 from workflows import generate_scene_prompts, generate_images_sequentially, generate_persona, create_ad_concept
@@ -13,6 +19,7 @@ from models import StoryboardOutput, ReferenceImageWithDescription, TargetCustom
 from tts_utils import create_tts_audio, get_recommended_voice, detect_language, TTSConfig
 from subtitle_utils import transcribe_audio_with_whisper, add_subtitles_to_video_ffmpeg, SubtitleResult
 from video_merger import VideoTransitionMerger
+import time
 
 class FullVideoWorkflow:
     """완전한 비디오 제작 워크플로우 클래스"""
@@ -21,6 +28,10 @@ class FullVideoWorkflow:
         self.use_static_dir = use_static_dir
         self.temp_dir = "./static/videos" if use_static_dir else tempfile.mkdtemp()
         os.makedirs(self.temp_dir, exist_ok=True)
+        
+        # 자막 디렉토리도 생성
+        self.subtitle_dir = "./static/subtitles"
+        os.makedirs(self.subtitle_dir, exist_ok=True)
         
         # API 키들 로드
         from dotenv import load_dotenv
@@ -169,61 +180,66 @@ class FullVideoWorkflow:
             subtitle_info = None
             
             if add_subtitles:
-                print(f"\n📝 6단계: 자막 생성 및 추가...")
+                print(f"\n📝 6단계: FFmpeg와 Whisper로 .srt 자막 생성 및 추가...")
                 
-                # 전체 TTS 스크립트를 하나로 합치기
-                full_script = " ".join(tts_scripts)
-                
-                # 첫 번째 장면의 TTS 음성 파일로 자막 생성 (대표)
                 try:
-                    # 임시 TTS 파일 생성 (자막용)
-                    from tts_utils import create_tts_audio
-                    temp_tts_result = await create_tts_audio(
-                        text=full_script,
-                        voice_id=voice_id,
-                        api_key=self.api_keys["elevenlabs"],
-                        output_dir="./static/audio"
-                    )
+                    # TTS 오디오 파일 경로들 수집
+                    tts_audio_files = []
+                    for video_info in videos_with_tts:
+                        # 각 장면의 TTS 스크립트로 임시 오디오 파일 생성
+                        temp_tts_result = await create_tts_audio(
+                            text=video_info["tts_script"],
+                            voice_id=voice_id,
+                            api_key=self.api_keys["elevenlabs"],
+                            output_dir="./static/audio"
+                        )
+                        
+                        if temp_tts_result.success:
+                            tts_audio_files.append(temp_tts_result.audio_file_path)
                     
-                    if temp_tts_result.success:
-                        # Whisper로 자막 생성
-                        subtitle_result = await transcribe_audio_with_whisper(
-                            audio_file_path=temp_tts_result.audio_file_path,
-                            language=voice_preference.get("language", "ko"),
-                            api_key=self.api_keys["openai"],
-                            output_format="srt"
+                    if tts_audio_files:
+                        # FFmpeg와 Whisper로 .srt 자막 생성
+                        srt_filename = f"subtitles_{int(time.time() * 1000)}.srt"
+                        srt_path = os.path.join("./static/subtitles", srt_filename)
+                        
+                        subtitle_result = await self.create_srt_from_tts_with_ffmpeg(
+                            tts_audio_files=tts_audio_files,
+                            output_srt_path=srt_path
                         )
                         
                         if subtitle_result.success:
-                            # FFmpeg로 자막 합성
+                            # FFmpeg로 자막을 비디오에 합성
+                            from subtitle_utils import add_subtitles_to_video_ffmpeg
                             final_result = add_subtitles_to_video_ffmpeg(
                                 video_file_path=merged_video_path,
                                 subtitle_file_path=subtitle_result.subtitle_file_path,
-                                language=voice_preference.get("language", "ko")
+                                language="ko"
                             )
                             
                             if final_result.success:
                                 final_video_path = final_result.video_with_subtitle_path
                                 subtitle_info = {
                                     "subtitle_file": subtitle_result.subtitle_file_path,
+                                    "subtitle_url": f"/static/subtitles/{srt_filename}",
                                     "transcription": subtitle_result.transcription
                                 }
-                                print(f"✅ 자막 추가 완료")
+                                print(f"✅ FFmpeg .srt 자막 생성 및 합성 완료")
                             else:
-                                print(f"⚠️ 자막 합성 실패: {final_result.error}")
+                                print(f"⚠️ 자막 비디오 합성 실패: {final_result.error}")
                         else:
-                            print(f"⚠️ 자막 생성 실패: {subtitle_result.error}")
+                            print(f"⚠️ .srt 자막 생성 실패: {subtitle_result.error}")
                         
-                        # 임시 TTS 파일 삭제
-                        try:
-                            os.remove(temp_tts_result.audio_file_path)
-                        except:
-                            pass
+                        # 임시 TTS 파일들 정리
+                        for audio_file in tts_audio_files:
+                            try:
+                                os.remove(audio_file)
+                            except:
+                                pass
                     else:
-                        print(f"⚠️ 자막용 TTS 생성 실패: {temp_tts_result.error}")
+                        print(f"⚠️ TTS 오디오 파일 생성 실패")
                         
                 except Exception as e:
-                    print(f"⚠️ 자막 처리 중 오류: {e}")
+                    print(f"⚠️ FFmpeg 자막 처리 중 오류: {e}")
             
             # 7단계: 임시 파일 정리
             print(f"\n🧹 7단계: 임시 파일 정리...")
@@ -312,6 +328,134 @@ class FullVideoWorkflow:
             "supported_languages": ["ko", "en", "multilingual"]
         }
 
+    async def create_srt_from_tts_with_ffmpeg(
+        self,
+        tts_audio_files: List[str],
+        output_srt_path: str,
+        scene_durations: List[float] = None
+    ) -> SubtitleResult:
+        """
+        TTS 음성 파일들을 FFmpeg와 Whisper로 .srt 자막 파일 생성
+        
+        Args:
+            tts_audio_files: TTS 음성 파일 경로 리스트
+            output_srt_path: 출력 .srt 파일 경로
+            scene_durations: 각 장면별 지속 시간 (초)
+            
+        Returns:
+            SubtitleResult: 자막 생성 결과
+        """
+        print(f"📝 TTS 음성에서 FFmpeg로 .srt 자막 생성 시작...")
+        print(f"   입력 음성 파일: {len(tts_audio_files)}개")
+        print(f"   출력 .srt 파일: {output_srt_path}")
+        
+        try:
+            # 1단계: FFmpeg로 모든 TTS 파일을 하나로 합치기
+            temp_merged_audio = os.path.join(self.temp_dir, "merged_tts_for_subtitle.wav")
+            
+            # FFmpeg 명령어로 오디오 파일들 합치기
+            ffmpeg_exe = r'C:\Users\oi3oi\AppData\Local\Microsoft\WinGet\Packages\BtbN.FFmpeg.GPL_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-120061-gcfd1f81e7d-win64-gpl\bin\ffmpeg.exe'
+            
+            if len(tts_audio_files) == 1:
+                # 파일이 하나면 그대로 사용
+                temp_merged_audio = tts_audio_files[0]
+            else:
+                # 여러 파일을 하나로 합치기
+                print("🔗 FFmpeg로 TTS 음성 파일들 합치는 중...")
+                
+                # concat 필터를 위한 입력 준비
+                inputs = []
+                filter_complex = []
+                
+                for i, audio_file in enumerate(tts_audio_files):
+                    inputs.extend(["-i", audio_file])
+                    filter_complex.append(f"[{i}:0]")
+                
+                concat_cmd = [
+                    ffmpeg_exe,
+                    *inputs,
+                    "-filter_complex", f"{''.join(filter_complex)}concat=n={len(tts_audio_files)}:v=0:a=1[out]",
+                    "-map", "[out]",
+                    "-y",  # 덮어쓰기
+                    temp_merged_audio
+                ]
+                
+                result = subprocess.run(
+                    concat_cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8'
+                )
+                
+                if result.returncode != 0:
+                    raise Exception(f"FFmpeg 음성 합치기 실패: {result.stderr}")
+                
+                print("✅ TTS 음성 파일 합치기 완료")
+            
+            # 2단계: Whisper로 전사하여 .srt 생성
+            print("🤖 Whisper AI로 음성 전사 및 .srt 생성 중...")
+            
+            # OpenAI Whisper API 호출
+            headers = {
+                "Authorization": f"Bearer {self.api_keys['openai']}"
+            }
+            
+            with open(temp_merged_audio, "rb") as audio_file:
+                files = {
+                    "file": audio_file,
+                    "model": (None, "whisper-1"),
+                    "response_format": (None, "srt"),  # .srt 형식으로 직접 요청
+                    "language": (None, "ko")  # 한국어로 설정
+                }
+                
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(
+                        "https://api.openai.com/v1/audio/transcriptions",
+                        headers=headers,
+                        files=files
+                    )
+                    
+                    if response.status_code != 200:
+                        raise Exception(f"Whisper API 호출 실패: {response.status_code} - {response.text}")
+                    
+                    # .srt 형식의 응답 직접 저장
+                    srt_content = response.text
+                    
+                    # .srt 파일 저장
+                    os.makedirs(os.path.dirname(output_srt_path), exist_ok=True)
+                    with open(output_srt_path, "w", encoding="utf-8") as f:
+                        f.write(srt_content)
+                    
+                    print(f"✅ .srt 자막 파일 생성 완료: {output_srt_path}")
+                    
+                    # 3단계: 임시 파일 정리
+                    if temp_merged_audio != tts_audio_files[0]:  # 합친 파일인 경우에만 삭제
+                        try:
+                            os.remove(temp_merged_audio)
+                        except:
+                            pass
+                    
+                    # 전사된 텍스트 추출 (SRT에서 타임스탬프 제거)
+                    import re
+                    transcription_lines = []
+                    for line in srt_content.split('\n'):
+                        if not re.match(r'^\d+$', line.strip()) and not re.match(r'^[\d:,\s\-\>]+$', line.strip()) and line.strip():
+                            transcription_lines.append(line.strip())
+                    
+                    transcription = ' '.join(transcription_lines)
+                    
+                    return SubtitleResult(
+                        success=True,
+                        subtitle_file_path=output_srt_path,
+                        transcription=transcription,
+                        language="ko"
+                    )
+        
+        except Exception as e:
+            error_msg = f"TTS에서 .srt 생성 실패: {e}"
+            print(f"❌ {error_msg}")
+            return SubtitleResult(success=False, error=error_msg)
+            
 # 워크플로우 인스턴스 생성을 위한 헬퍼 함수
 def create_video_workflow(use_static_dir=True) -> FullVideoWorkflow:
     """비디오 워크플로우 인스턴스 생성"""

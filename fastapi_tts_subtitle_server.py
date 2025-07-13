@@ -164,39 +164,6 @@ async def list_videos():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"비디오 목록 조회 중 오류: {str(e)}")
 
-@app.post("/test_whisper_precision")
-async def test_whisper_precision():
-    """0.1초 정밀도 Whisper AI 테스트"""
-    try:
-        test_video = "frame_transitions_1752195752718.mp4"
-        test_text = "안녕하세요. 오늘은 특별한 날입니다. 우리가 함께하는 이 순간이 정말 소중합니다. 새로운 기술로 영상을 만들어보겠습니다."
-        
-        result = await api_create_enhanced_video(
-            video_path=f"static/videos/{test_video}",
-            text=test_text,
-            font_size=30,
-            enable_bgm=True
-        )
-        
-        if result["success"]:
-            return JSONResponse(content={
-                "success": True,
-                "message": "Whisper AI 0.1초 정밀도 테스트 완료",
-                "output_filename": result["output_filename"],
-                "server_url": result["server_url"],
-                "file_size": result["file_size"],
-                "tts_duration": result["tts_duration"],
-                "subtitle_method": result["subtitle_method"],
-                "subtitle_count": result["subtitle_count"],
-                "mode": result["mode"],
-                "test_text": test_text
-            })
-        else:
-            raise HTTPException(status_code=500, detail=result["error"])
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"테스트 중 오류 발생: {str(e)}")
-
 if __name__ == "__main__":
     import uvicorn
     print("🚀 FastAPI 서버 시작 중...")
