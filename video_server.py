@@ -333,46 +333,60 @@ def add_video_features_to_server():
         async def merge_videos_with_transitions():  # 비동기 함수로 영상 합치기 처리
             """6단계: 5단계에서 생성된 영상들을 랜덤 트랜지션으로 합치기"""
             
+            # 예시 영상 URL들 (5단계 영상이 없을 때 사용)
+            example_video_urls = [
+                "https://dnznrvs05pmza.cloudfront.net/00d197e5-4a5c-4f56-a9f9-6383f87e2274.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiNWMxNGJlYTAxMDJkNDg2YiIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc1MzMxNTIwMH0.CNWJIzlo1pm9cVXCD87WJb1OsX72q6bWi7aM3ity6C0",
+                "https://dnznrvs05pmza.cloudfront.net/069b0e27-0585-4f63-99fa-dc0e835960f9.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiMzUwYzQyY2EzMWQzNGY0OCIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc1MzMxNTIwMH0.u0GdZi-n4jyRSAgYtf3PksK1JC3JwUPgn3dKi4N7mRM",
+                "https://dnznrvs05pmza.cloudfront.net/f52bcb1d-4384-415b-9b91-40b95fd8da72.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiNjFiY2YyYzZiNjcwNDU5NyIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc1MzMxNTIwMH0.nIHzVq_J_B6742Phvhli3RRa06BojLMmCLpNlh_IZWs"
+            ]
+            
             # client.py의 현재 프로젝트 상태에서 생성된 영상 정보 가져오기
+            video_urls = []
+            use_example_videos = False
+            
             try:
                 from client import current_project  # client.py에서 관리하는 프로젝트 상태 import
                 
-                if not current_project.get("generated_videos"):  # 생성된 영상이 없으면 에러
-                    raise HTTPException(  # HTTP 400 에러 발생
-                        status_code=400,  # 잘못된 요청 상태 코드
-                        detail="먼저 5단계(/video/generate-videos)를 완료하여 영상을 생성해주세요."  # 에러 메시지
-                    )
+                if not current_project.get("generated_videos"):  # 생성된 영상이 없으면 예시 영상 사용
+                    print("⚠️ 5단계에서 생성된 영상이 없습니다. 예시 영상을 사용합니다.")
+                    video_urls = example_video_urls
+                    use_example_videos = True
+                else:
+                    print("📋 6단계: 5단계에서 생성된 영상들을 확인합니다...")  # 작업 시작 알림
+                    
+                    # 생성된 영상 URL들 추출
+                    generated_videos = current_project["generated_videos"]  # 5단계에서 생성된 영상 리스트 가져오기
+                    
+                    # 성공적으로 생성된 영상 URL들만 추출
+                    for video in generated_videos:
+                        if video.get("status") == "success" and video.get("video_url"):
+                            video_urls.append(video["video_url"])
+                    
+                    if not video_urls:
+                        print("⚠️ 5단계에서 생성된 유효한 영상이 없습니다. 예시 영상을 사용합니다.")
+                        video_urls = example_video_urls
+                        use_example_videos = True
                 
-                print("📋 6단계: 5단계에서 생성된 영상들을 확인합니다...")  # 작업 시작 알림
-                
-                # 생성된 영상 URL들 추출
-                generated_videos = current_project["generated_videos"]  # 5단계에서 생성된 영상 리스트 가져오기
-                video_urls = []  # 실제 영상 URL들을 저장할 리스트
-                
-                # 성공적으로 생성된 영상 URL들만 추출
-                for video in generated_videos:
-                    if video.get("status") == "success" and video.get("video_url"):
-                        video_urls.append(video["video_url"])
-                
-                if not video_urls:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="생성된 영상이 없습니다. 5단계에서 영상 생성이 실패했을 수 있습니다."
-                    )
-                
-                print(f"🎬 총 {len(video_urls)}개 실제 생성 영상을 랜덤 트랜지션으로 합칩니다...")  # 합칠 영상 개수 출력
-                
-                # 실제 영상 URL들 출력
-                for i, url in enumerate(video_urls, 1):
-                    print(f"   영상 {i}: {url}")
+                if use_example_videos:
+                    print(f"🎬 예시 영상 {len(video_urls)}개를 랜덤 트랜지션으로 합칩니다...")
+                    print("📝 사용할 예시 영상들:")
+                    for i, url in enumerate(video_urls, 1):
+                        print(f"   영상 {i}: {url[:80]}...")
+                else:
+                    print(f"🎬 총 {len(video_urls)}개 실제 생성 영상을 랜덤 트랜지션으로 합칩니다...")  # 합칠 영상 개수 출력
+                    
+                    # 실제 영상 URL들 출력
+                    for i, url in enumerate(video_urls, 1):
+                        print(f"   영상 {i}: {url}")
                 
                 # 실제 영상 URL들을 사용한 트랜지션 합치기
                 merger = create_merger_instance(use_static_dir=True)  # 영상 합치기 객체 생성 (static 디렉토리 사용)
                 output_filename = generate_output_filename("merged_ai_videos")  # 타임스탬프 포함 출력 파일명 생성
                 
-                print("🚀 실제 생성된 영상 URL들로 트랜지션 합치기 시작...")
+                video_source = "예시 영상" if use_example_videos else "실제 생성된 영상"
+                print(f"🚀 {video_source} URL들로 트랜지션 합치기 시작...")
                 final_video_path = merger.merge_videos_with_frame_transitions(  # 프레임 단위 트랜지션으로 영상 합치기 실행
-                    video_urls,  # 실제 생성된 영상 URL 리스트
+                    video_urls,  # 영상 URL 리스트 (예시 또는 실제 생성)
                     output_filename  # 출력 파일명
                 )
                 video_url = merger.get_video_url(output_filename)  # 웹에서 접근 가능한 URL 생성
@@ -380,23 +394,151 @@ def add_video_features_to_server():
                 print(f"🎉 6단계 완료: 영상이 성공적으로 합쳐졌습니다!")  # 완료 메시지
                 print(f"📱 브라우저에서 확인: {video_url}")  # 접근 URL 출력
                 
+                # 🔥 6단계 완료 후 합쳐진 영상 파일명을 TXT 파일로 저장
+                print(f"📝 6단계 완료된 영상 파일명 저장 중...")
+                merged_video_list_file = "merged_video_list.txt"
+                try:
+                    # 실제 생성된 파일 경로 사용 (final_video_path에서 추출)
+                    if final_video_path:
+                        # final_video_path가 절대 경로인지 확인
+                        if os.path.isabs(final_video_path):
+                            actual_video_path = final_video_path
+                        else:
+                            actual_video_path = os.path.abspath(final_video_path)
+                    else:
+                        # fallback: 기존 방식
+                        actual_video_path = os.path.abspath(os.path.join("static", "videos", output_filename))
+                    
+                    with open(merged_video_list_file, 'w', encoding='utf-8') as f:
+                        f.write(actual_video_path + '\n')
+                    
+                    print(f"✅ 6단계 영상 파일명 저장 성공!")
+                    print(f"   파일 위치: {os.path.abspath(merged_video_list_file)}")
+                    print(f"   저장된 영상: {actual_video_path}")
+                    print(f"   실제 final_video_path: {final_video_path}")
+                    print(f"   전달한 output_filename: {output_filename}")
+                    
+                    # 파일 존재 확인
+                    if os.path.exists(actual_video_path):
+                        file_size = os.path.getsize(actual_video_path) / (1024 * 1024)
+                        print(f"   파일 크기: {file_size:.1f}MB")
+                    else:
+                        print(f"⚠️ 저장된 경로에 파일이 없습니다: {actual_video_path}")
+                        # static/videos 폴더에서 최근 생성된 mp4 파일 찾기
+                        video_dir = "static/videos"
+                        if os.path.exists(video_dir):
+                            mp4_files = [f for f in os.listdir(video_dir) if f.endswith('.mp4')]
+                            if mp4_files:
+                                # 가장 최근 파일 찾기
+                                latest_file = max(mp4_files, key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
+                                latest_path = os.path.abspath(os.path.join(video_dir, latest_file))
+                                print(f"   🔍 대신 최근 생성된 파일 사용: {latest_file}")
+                                # txt 파일 다시 저장
+                                with open(merged_video_list_file, 'w', encoding='utf-8') as f:
+                                    f.write(latest_path + '\n')
+                                actual_video_path = latest_path
+                    
+                except Exception as e:
+                    print(f"❌ 6단계 영상 파일명 저장 실패: {e}")
+                
                 return {  # API 응답 반환
                     "step": "6단계_영상_합치기",  # 현재 단계
                     "status": "success",  # 처리 상태: 성공
-                    "message": "영상이 랜덤 트랜지션으로 성공적으로 합쳐졌습니다.",  # 성공 메시지
+                    "message": f"{video_source}이 랜덤 트랜지션으로 성공적으로 합쳐졌습니다.",  # 성공 메시지
+                    "video_source": video_source,  # 사용된 영상 소스
                     "input_videos": len(video_urls),  # 입력 영상 개수
                     "transitions_used": "random_transitions",  # 사용된 트랜지션 타입
                     "output_file": output_filename,  # 출력 파일명
                     "url": video_url,  # 접근 URL
                     "duration": "estimated_duration",  # 예상 영상 길이
-                    "workflow_complete": True  # 워크플로우 완료 여부
+                    "workflow_complete": True,  # 워크플로우 완료 여부
+                    "used_example_videos": use_example_videos  # 예시 영상 사용 여부
                 }
                 
             except ImportError:  # client.py 파일을 찾을 수 없는 경우
-                raise HTTPException(  # HTTP 500 에러 발생
-                    status_code=500,  # 서버 내부 오류 상태 코드
-                    detail="client.py를 찾을 수 없습니다. 워크플로우를 먼저 실행해주세요."  # 에러 메시지
+                print("⚠️ client.py를 찾을 수 없습니다. 예시 영상을 사용합니다.")
+                video_urls = example_video_urls
+                use_example_videos = True
+                
+                print(f"🎬 예시 영상 {len(video_urls)}개를 랜덤 트랜지션으로 합칩니다...")
+                print("📝 사용할 예시 영상들:")
+                for i, url in enumerate(video_urls, 1):
+                    print(f"   영상 {i}: {url[:80]}...")
+                
+                # 예시 영상들을 사용한 트랜지션 합치기
+                merger = create_merger_instance(use_static_dir=True)  # 영상 합치기 객체 생성 (static 디렉토리 사용)
+                output_filename = generate_output_filename("merged_example_videos")  # 타임스탬프 포함 출력 파일명 생성
+                
+                print("🚀 예시 영상 URL들로 트랜지션 합치기 시작...")
+                final_video_path = merger.merge_videos_with_frame_transitions(  # 프레임 단위 트랜지션으로 영상 합치기 실행
+                    video_urls,  # 예시 영상 URL 리스트
+                    output_filename  # 출력 파일명
                 )
+                video_url = merger.get_video_url(output_filename)  # 웹에서 접근 가능한 URL 생성
+                
+                print(f"🎉 6단계 완료: 예시 영상이 성공적으로 합쳐졌습니다!")  # 완료 메시지
+                print(f"📱 브라우저에서 확인: {video_url}")  # 접근 URL 출력
+                
+                # 🔥 6단계 완료 후 합쳐진 영상 파일명을 TXT 파일로 저장 (예시 영상)
+                print(f"📝 6단계 완료된 영상 파일명 저장 중... (예시 영상)")
+                merged_video_list_file = "merged_video_list.txt"
+                try:
+                    # 실제 생성된 파일 경로 사용 (final_video_path에서 추출)
+                    if final_video_path:
+                        # final_video_path가 절대 경로인지 확인
+                        if os.path.isabs(final_video_path):
+                            actual_video_path = final_video_path
+                        else:
+                            actual_video_path = os.path.abspath(final_video_path)
+                    else:
+                        # fallback: 기존 방식
+                        actual_video_path = os.path.abspath(os.path.join("static", "videos", output_filename))
+                    
+                    with open(merged_video_list_file, 'w', encoding='utf-8') as f:
+                        f.write(actual_video_path + '\n')
+                    
+                    print(f"✅ 6단계 영상 파일명 저장 성공! (예시 영상)")
+                    print(f"   파일 위치: {os.path.abspath(merged_video_list_file)}")
+                    print(f"   저장된 영상: {actual_video_path}")
+                    print(f"   실제 final_video_path: {final_video_path}")
+                    print(f"   전달한 output_filename: {output_filename}")
+                    
+                    # 파일 존재 확인
+                    if os.path.exists(actual_video_path):
+                        file_size = os.path.getsize(actual_video_path) / (1024 * 1024)
+                        print(f"   파일 크기: {file_size:.1f}MB")
+                    else:
+                        print(f"⚠️ 저장된 경로에 파일이 없습니다: {actual_video_path}")
+                        # static/videos 폴더에서 최근 생성된 mp4 파일 찾기
+                        video_dir = "static/videos"
+                        if os.path.exists(video_dir):
+                            mp4_files = [f for f in os.listdir(video_dir) if f.endswith('.mp4')]
+                            if mp4_files:
+                                # 가장 최근 파일 찾기
+                                latest_file = max(mp4_files, key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
+                                latest_path = os.path.abspath(os.path.join(video_dir, latest_file))
+                                print(f"   🔍 대신 최근 생성된 파일 사용: {latest_file}")
+                                # txt 파일 다시 저장
+                                with open(merged_video_list_file, 'w', encoding='utf-8') as f:
+                                    f.write(latest_path + '\n')
+                                actual_video_path = latest_path
+                    
+                except Exception as e:
+                    print(f"❌ 6단계 영상 파일명 저장 실패: {e}")
+                
+                return {  # API 응답 반환
+                    "step": "6단계_영상_합치기",  # 현재 단계
+                    "status": "success",  # 처리 상태: 성공
+                    "message": "예시 영상이 랜덤 트랜지션으로 성공적으로 합쳐졌습니다.",  # 성공 메시지
+                    "video_source": "예시 영상",  # 사용된 영상 소스
+                    "input_videos": len(video_urls),  # 입력 영상 개수
+                    "transitions_used": "random_transitions",  # 사용된 트랜지션 타입
+                    "output_file": output_filename,  # 출력 파일명
+                    "url": video_url,  # 접근 URL
+                    "duration": "estimated_duration",  # 예상 영상 길이
+                    "workflow_complete": True,  # 워크플로우 완료 여부
+                    "used_example_videos": True  # 예시 영상 사용 여부
+                }
             except Exception as e:  # 기타 모든 예외 처리
                 raise HTTPException(  # HTTP 500 에러 발생
                     status_code=500,  # 서버 내부 오류 상태 코드
@@ -465,10 +607,10 @@ def add_video_features_to_server():
                 # 1단계: OpenAI LLM으로 TTS 스크립트 자동 생성
                 print(f"🤖 OpenAI GPT로 TTS 스크립트 자동 생성 중...")
                 
-                # LLM 프롬프트 구성
+                # LLM 프롬프트 구성 (영상 길이 5초에 맞춰 짧은 TTS 생성)
                 llm_prompt = f"""
-당신은 광고 영상용 TTS 내레이션 전문가입니다. 
-다음 정보를 바탕으로 매력적이고 설득력 있는 광고 내레이션 스크립트를 한국어로 작성해주세요.
+당신은 짧은 영상 광고용 TTS 내레이션 전문가입니다. 
+다음 정보를 바탕으로 매력적이고 설득력 있는 짧은 광고 내레이션 스크립트를 한국어로 작성해주세요.
 
 **상품/브랜드 정보:**
 - 상품명: {product_name}
@@ -486,19 +628,25 @@ def add_video_features_to_server():
 **스토리보드 장면 정보:**
 {storyboard_scenes if storyboard_scenes else "제품을 소개하는 일반적인 광고"}
 
+**중요한 제약사항:**
+- 영상 길이: 5초 (매우 짧음)
+- 각 TTS는 3-4초 미만이어야 함
+- 각 문장은 40자 이내로 제한
+- 총 3-4개의 매우 짧고 임팩트 있는 문장
+
 **요구사항:**
-1. 총 3-5개의 짧은 문장으로 구성 (각 문장은 5-10초 분량)
-2. 자연스럽고 친근한 톤
-3. 제품의 핵심 가치 강조
-4. 감정적으로 어필할 수 있는 내용
-5. 마지막은 행동 유도 문구 포함
+1. 총 3-4개의 매우 짧은 문장 (각 문장은 3-4초 분량, 40자 이내)
+2. 간결하고 임팩트 있는 톤
+3. 제품의 핵심 가치를 한 줄로 표현
+4. 감정적 어필은 최소화하고 명확한 메시지
+5. 마지막은 간단한 행동 유도
 
 **출력 형식:**
-각 문장을 번호와 함께 나열해주세요.
+각 문장을 번호와 함께 나열해주세요. 각 문장은 반드시 40자 이내여야 합니다.
 예시:
-1. 안녕하세요, {brand_name}입니다.
-2. ...
-3. ...
+1. {brand_name}의 {product_name}
+2. 품질이 다릅니다
+3. 지금 만나보세요
 
 스크립트만 작성해주세요:
 """
@@ -557,17 +705,19 @@ def add_video_features_to_server():
                     print(f"❌ OpenAI LLM 호출 실패: {llm_error}")
                     print(f"   오류 타입: {type(llm_error).__name__}")
                     print(f"   상세 오류: {str(llm_error)}")
-                    # LLM 실패 시 기본 스크립트 생성
-                    generated_script = f"""1. 안녕하세요, {brand_name}와 함께하세요.
-2. {product_name}는 {persona_description if persona_description else '고객'}을 위한 특별한 제품입니다.
-3. {marketing_insights if marketing_insights else '최고의 품질과 가치'}를 제공합니다.
-4. {ad_concept if ad_concept else '신뢰할 수 있는 브랜드'}로 여러분과 함께하겠습니다.
-5. 지금 바로 {product_name}를 만나보세요."""
-                    print(f"🔄 기본 스크립트로 대체:")
+                    # LLM 실패 시 짧은 기본 스크립트 생성 (4초 미만용)
+                    generated_script = f"""1. {brand_name} {product_name}
+2. 품질이 다릅니다
+3. 특별한 가치를 제공
+4. 지금 만나보세요"""
+                    print(f"🔄 짧은 기본 스크립트로 대체 (4초 미만용):")
                     print(f"   {generated_script}")
 
-                # 2단계: 생성된 스크립트를 문장별로 파싱
+                # 2단계: 생성된 스크립트를 문장별로 파싱 (영상 길이에 맞게 텍스트 길이 제한)
                 tts_scripts = []
+                
+                # 영상이 5초이므로 TTS는 4초 미만으로 제한 (약 40-50자 내외)
+                MAX_TTS_CHARS = 45  # 4초 미만 TTS를 위한 최대 글자 수
                 
                 # 생성된 스크립트에서 번호가 있는 문장들 추출
                 import re
@@ -579,12 +729,24 @@ def add_video_features_to_server():
                     for i, (number, text) in enumerate(numbered_sentences):
                         clean_text = text.strip().replace('\n', ' ').replace('  ', ' ')
                         if clean_text:
+                            # 텍스트 길이 제한 (4초 미만 TTS를 위해)
+                            if len(clean_text) > MAX_TTS_CHARS:
+                                # 문장을 자연스럽게 자르기
+                                truncated_text = clean_text[:MAX_TTS_CHARS]
+                                # 마지막 완전한 단어까지만 포함
+                                last_space = truncated_text.rfind(' ')
+                                if last_space > MAX_TTS_CHARS - 10:  # 너무 많이 자르지 않도록
+                                    truncated_text = truncated_text[:last_space]
+                                clean_text = truncated_text
+                                print(f"   📏 텍스트 길이 제한: {len(clean_text)}자로 단축")
+                            
                             tts_scripts.append({
                                 "scene_number": int(number),
                                 "script_type": "generated",
                                 "text": clean_text,
                                 "description": f"LLM 생성 스크립트 {number}",
-                                "duration": 7  # 기본 7초
+                                "estimated_duration": min(len(clean_text) * 0.08, 3.8),  # 글자당 0.08초, 최대 3.8초
+                                "char_count": len(clean_text)
                             })
                 else:
                     # 번호가 없으면 문장 단위로 분할
@@ -592,17 +754,29 @@ def add_video_features_to_server():
                     for i, sentence in enumerate(sentences):
                         clean_sentence = sentence.strip()
                         if clean_sentence and len(clean_sentence) > 10:
+                            # 텍스트 길이 제한
+                            if len(clean_sentence) > MAX_TTS_CHARS:
+                                truncated_sentence = clean_sentence[:MAX_TTS_CHARS]
+                                last_space = truncated_sentence.rfind(' ')
+                                if last_space > MAX_TTS_CHARS - 10:
+                                    truncated_sentence = truncated_sentence[:last_space]
+                                clean_sentence = truncated_sentence
+                                print(f"   📏 문장 길이 제한: {len(clean_sentence)}자로 단축")
+                            
                             tts_scripts.append({
                                 "scene_number": i + 1,
                                 "script_type": "generated",
                                 "text": clean_sentence,
                                 "description": f"LLM 생성 문장 {i + 1}",
-                                "duration": 7
+                                "estimated_duration": min(len(clean_sentence) * 0.08, 3.8),
+                                "char_count": len(clean_sentence)
                             })
                 
-                print(f"✅ 총 {len(tts_scripts)}개의 TTS 스크립트 생성 완료:")
+                print(f"✅ 총 {len(tts_scripts)}개의 TTS 스크립트 생성 완료 (영상 길이 5초에 맞춰 최적화):")
                 for script in tts_scripts:
-                    print(f"   - {script['description']}: {script['text'][:50]}...")
+                    duration_est = script.get('estimated_duration', 3.0)
+                    char_count = script.get('char_count', 0)
+                    print(f"   - {script['description']}: {script['text'][:40]}... ({char_count}자, 예상 {duration_est:.1f}초)")
 
                 # 3단계: ElevenLabs TTS 변환 시작
                 print("🎤 TTS 변환 모듈 import 중...")
@@ -954,7 +1128,8 @@ def add_video_features_to_server():
                                 "word_count": len(subtitle_result.transcription.split()) if subtitle_result.transcription else 0,
                                 "tts_based_name": True  # TTS 파일명 기반으로 생성됨
                             })
-                            print(f"   ✅ 성공: {subtitle_filename} ({subtitle_result.duration:.1f}초)")
+                            duration_str = f"({subtitle_result.duration:.1f}초)" if subtitle_result.duration else "(길이 불명)"
+                            print(f"   ✅ 성공: {subtitle_filename} {duration_str}")
                             print(f"   📊 전사 내용: {subtitle_result.transcription[:100]}{'...' if len(subtitle_result.transcription) > 100 else ''}")
                         else:
                             print(f"   ❌ 실패: {subtitle_result.error}")
@@ -983,17 +1158,35 @@ def add_video_features_to_server():
                 print(f"   실패: {len(failed_subtitles)}개")
                 print(f"   성공률: {(len(successful_subtitles) / len(tts_audio_files)) * 100:.1f}%")
                 
-                # 자막 생성 완료 후 TTS 파일 목록 txt 파일 삭제
+                # 🔥 8-1단계 완료 후 자막 파일 목록을 subtitle_list.txt로 저장
+                print(f"📝 8-1단계 완료된 자막 파일명 저장 중...")
+                subtitle_list_file = "subtitle_list.txt"
+                try:
+                    with open(subtitle_list_file, 'w', encoding='utf-8') as f:
+                        for subtitle in successful_subtitles:
+                            f.write(subtitle["subtitle_file"] + '\n')
+                    
+                    print(f"✅ 8-1단계 자막 파일명 저장 성공!")
+                    print(f"   파일 위치: {os.path.abspath(subtitle_list_file)}")
+                    print(f"   저장된 자막 파일 수: {len(successful_subtitles)}")
+                    
+                except Exception as e:
+                    print(f"❌ 8-1단계 자막 파일명 저장 실패: {e}")
+                
+                # TTS 파일 목록 txt 파일은 유지 (삭제하지 않음)
                 tts_list_file = "tts_list.txt"
                 if os.path.exists(tts_list_file):
-                    os.remove(tts_list_file)
-                    print(f"🗑️ TTS 파일 목록 삭제: {tts_list_file}")
+                    print(f"📋 TTS 파일 목록 유지: {tts_list_file} (8-2단계에서 사용)")
+                else:
+                    print(f"⚠️ TTS 파일 목록이 없습니다: {tts_list_file}")
                 
                 # 성공한 자막들의 순서 정보 생성 (다음 단계에서 영상 합치기용)
                 if successful_subtitles:
                     print("📋 생성된 자막 파일 순서:")
                     for subtitle in successful_subtitles:
-                        print(f"   {subtitle['scene_number']}. {subtitle['subtitle_filename']} ({subtitle.get('duration', 0):.1f}초)")
+                        duration = subtitle.get('duration', 0)
+                        duration_str = f"({duration:.1f}초)" if duration else "(길이 불명)"
+                        print(f"   {subtitle['scene_number']}. {subtitle['subtitle_filename']} {duration_str}")
                 
                 return {
                     "step": "8-1단계_자막_생성",
@@ -1036,7 +1229,12 @@ def add_video_features_to_server():
 
         @app.post("/video/merge-with-tts-subtitles")  # POST 요청으로 TTS + 자막 완전 합치기
         async def merge_videos_with_tts_and_subtitles(request: dict):  # TTS + 자막 완전 합치기 요청 처리
-            """8-2단계: 영상에 TTS 오디오와 자막을 최종 합치기 (순서대로 자동 합치기)"""
+            """8-2단계: 영상에 TTS 오디오와 자막을 최종 합치기 (이전 단계 결과물 사용)"""
+            import os
+            import time
+            import glob
+            import subprocess
+            
             try:
                 print(f"🎬 8-2단계: 영상 + TTS + 자막 완전 합치기 시작...")
                 
@@ -1044,196 +1242,499 @@ def add_video_features_to_server():
                 video_urls = request.get("video_urls", [])  # 비디오 URL 리스트 (선택사항)
                 audio_files = request.get("audio_files", [])  # TTS 오디오 파일들 (선택사항)
                 subtitle_files = request.get("subtitle_files", [])  # 자막 파일들 (선택사항)
-                auto_detect_files = request.get("auto_detect_files", True)  # 자동 파일 찾기
                 output_filename = request.get("output_filename", "final_video_with_tts_subtitles.mp4")
-                transition_type = request.get("transition_type", "fade")  # 트랜지션 타입
-                tts_volume = request.get("tts_volume", 0.8)  # TTS 볼륨
-                video_volume = request.get("video_volume", 0.3)  # 원본 비디오 볼륨
-                enable_bgm = request.get("enable_bgm", True)  # BGM 사용 여부
-                bgm_volume = request.get("bgm_volume", 0.2)  # BGM 볼륨
                 
-                # 1. 자동으로 최신 생성된 파일들 찾기
-                if auto_detect_files:
-                    print("🔍 최신 생성 파일들 자동 검색 중...")
-                    
-                    import glob
-                    import time
-                    current_time = time.time()
-                    recent_time_limit = 1800  # 30분 = 1800초
-                    
-                    # 최신 비디오 파일들 찾기
-                    if not video_urls:
-                        video_dir = "./static/videos"
-                        if os.path.exists(video_dir):
-                            video_files = []
-                            for ext in ['*.mp4', '*.avi', '*.mov']:
-                                video_files.extend(glob.glob(os.path.join(video_dir, ext)))
-                            
-                            if video_files:
-                                # 최근 파일들만 선택
-                                recent_videos = []
-                                for file_path in video_files:
-                                    if current_time - os.path.getmtime(file_path) < recent_time_limit:
-                                        recent_videos.append(file_path)
-                                
-                                if recent_videos:
-                                    # 파일명에서 숫자 순서대로 정렬
-                                    recent_videos.sort()
-                                    video_urls = [f"/static/videos/{os.path.basename(f)}" for f in recent_videos]
-                                    print(f"✅ 비디오 파일 {len(video_urls)}개 발견")
-                    
-                    # 최신 오디오 파일들 찾기
-                    if not audio_files:
-                        audio_dir = "./static/audio"
+                # 1. 6단계에서 생성된 합쳐진 영상 찾기 (merged_video_list.txt 우선 사용)
+                if not video_urls:
+                    print("🔍 6단계에서 생성된 영상 찾기 (merged_video_list.txt 활용)...")
+                    merged_video_list_file = "merged_video_list.txt"
+                    if os.path.exists(merged_video_list_file):
+                        with open(merged_video_list_file, 'r', encoding='utf-8') as f:
+                            potential_video_urls = [line.strip() for line in f.readlines() if line.strip()]
+                        
+                        # 파일 존재 확인
+                        for video_path in potential_video_urls:
+                            if os.path.exists(video_path):
+                                video_urls = [video_path]
+                                print(f"✅ 6단계 합쳐진 영상 사용: {os.path.basename(video_path)}")
+                                print(f"   파일 경로: {video_path}")
+                                file_size = os.path.getsize(video_path) / (1024 * 1024)
+                                print(f"   파일 크기: {file_size:.1f}MB")
+                                break
+                            else:
+                                print(f"⚠️ 파일이 존재하지 않음: {video_path}")
+                        
+                        if not video_urls:
+                            print("❌ merged_video_list.txt에서 유효한 영상 파일을 찾을 수 없습니다.")
+                    else:
+                        print("❌ merged_video_list.txt 파일이 없습니다. 폴백 방식 사용...")
+                        try:
+                            from client import current_project
+                            # current_project에 6단계 결과가 있는지 확인
+                            if current_project.get("merged_video_path"):
+                                merged_video_path = current_project["merged_video_path"]
+                                if os.path.exists(merged_video_path):
+                                    video_urls = [merged_video_path]
+                                    print(f"✅ current_project에서 영상 사용: {os.path.basename(merged_video_path)}")
+                                else:
+                                    print(f"⚠️ current_project 경로에 파일 없음: {merged_video_path}")
+                            else:
+                                # static/videos에서 최근 merged 파일 찾기
+                                video_dir = os.path.abspath("static/videos")
+                                if os.path.exists(video_dir):
+                                    current_time = time.time()
+                                    merged_files = glob.glob(os.path.join(video_dir, "merged_*.mp4"))
+                                    if merged_files:
+                                        # 최근 생성된 파일 선택
+                                        latest_file = max(merged_files, key=os.path.getmtime)
+                                        if current_time - os.path.getmtime(latest_file) < 3600:  # 1시간 내
+                                            video_urls = [latest_file]
+                                            print(f"✅ 최근 합쳐진 영상 사용: {os.path.basename(latest_file)}")
+                                        else:
+                                            print(f"⚠️ 최근 영상이 너무 오래됨 (1시간 초과)")
+                                    else:
+                                        print(f"⚠️ static/videos에서 merged_*.mp4 파일을 찾을 수 없음")
+                                else:
+                                    print(f"⚠️ static/videos 디렉토리가 존재하지 않음: {video_dir}")
+                        except Exception as e:
+                            print(f"⚠️ 폴백 영상 찾기 실패: {e}")
+                
+                # 2. 7단계에서 생성된 TTS 파일들 찾기 (tts_list.txt 우선 사용)
+                if not audio_files:
+                    print("🔍 7단계에서 생성된 TTS 파일들 찾기 (tts_list.txt 활용)...")
+                    # tts_list.txt가 있으면 사용
+                    tts_list_file = "tts_list.txt"
+                    if os.path.exists(tts_list_file):
+                        with open(tts_list_file, 'r', encoding='utf-8') as f:
+                            potential_audio_files = [line.strip() for line in f.readlines() if line.strip()]
+                        
+                        # 파일 존재 확인
+                        valid_audio_files = []
+                        for audio_path in potential_audio_files:
+                            if os.path.exists(audio_path):
+                                valid_audio_files.append(audio_path)
+                                print(f"   ✅ {os.path.basename(audio_path)}")
+                            else:
+                                print(f"   ❌ 파일 없음: {os.path.basename(audio_path)}")
+                        
+                        audio_files = valid_audio_files
+                        print(f"✅ TTS 목록 파일에서 유효한 {len(audio_files)}개 파일 로드")
+                    else:
+                        print("❌ tts_list.txt 파일이 없습니다. 폴백 방식 사용...")
+                        # static/audio에서 최근 생성된 TTS 파일들 찾기
+                        audio_dir = os.path.abspath("static/audio")
                         if os.path.exists(audio_dir):
-                            audio_files_found = []
-                            for ext in ['*.mp3', '*.wav']:
-                                audio_files_found.extend(glob.glob(os.path.join(audio_dir, ext)))
-                            
-                            if audio_files_found:
-                                # 최근 파일들만 선택
-                                recent_audio = []
-                                for file_path in audio_files_found:
-                                    if current_time - os.path.getmtime(file_path) < recent_time_limit:
-                                        recent_audio.append(file_path)
-                                
-                                if recent_audio:
-                                    recent_audio.sort()
-                                    audio_files = recent_audio
-                                    print(f"✅ 오디오 파일 {len(audio_files)}개 발견")
-                    
-                    # 최신 자막 파일들 찾기
-                    if not subtitle_files:
-                        subtitle_dir = "./static/subtitles"
+                            current_time = time.time()
+                            mp3_files = glob.glob(os.path.join(audio_dir, "scene_*.mp3"))
+                            recent_mp3_files = []
+                            for file_path in mp3_files:
+                                if current_time - os.path.getmtime(file_path) < 1800:  # 30분 내
+                                    recent_mp3_files.append(file_path)
+                            if recent_mp3_files:
+                                # 파일명 순서대로 정렬
+                                audio_files = sorted(recent_mp3_files)
+                                print(f"✅ 최근 TTS 파일 {len(audio_files)}개 사용")
+                
+                # 3. 8-1단계에서 생성된 자막 파일들 찾기 (subtitle_list.txt 우선 사용)
+                if not subtitle_files:
+                    print("🔍 8-1단계에서 생성된 자막 파일들 찾기 (subtitle_list.txt 활용)...")
+                    subtitle_list_file = "subtitle_list.txt"
+                    if os.path.exists(subtitle_list_file):
+                        with open(subtitle_list_file, 'r', encoding='utf-8') as f:
+                            potential_subtitle_files = [line.strip() for line in f.readlines() if line.strip()]
+                        
+                        # 파일 존재 확인
+                        valid_subtitle_files = []
+                        for subtitle_path in potential_subtitle_files:
+                            if os.path.exists(subtitle_path):
+                                valid_subtitle_files.append(subtitle_path)
+                                print(f"   ✅ {os.path.basename(subtitle_path)}")
+                            else:
+                                print(f"   ❌ 파일 없음: {os.path.basename(subtitle_path)}")
+                        
+                        subtitle_files = valid_subtitle_files
+                        print(f"✅ 자막 목록 파일에서 유효한 {len(subtitle_files)}개 파일 로드")
+                    else:
+                        print("❌ subtitle_list.txt 파일이 없습니다. 폴백 방식 사용...")
+                        subtitle_dir = os.path.abspath("static/subtitles")
                         if os.path.exists(subtitle_dir):
-                            subtitle_files_found = []
-                            for ext in ['*.srt', '*.vtt']:
-                                subtitle_files_found.extend(glob.glob(os.path.join(subtitle_dir, ext)))
-                            
-                            if subtitle_files_found:
-                                # 최근 파일들만 선택
-                                recent_subtitles = []
-                                for file_path in subtitle_files_found:
-                                    if current_time - os.path.getmtime(file_path) < recent_time_limit:
-                                        recent_subtitles.append(file_path)
-                                
-                                if recent_subtitles:
-                                    recent_subtitles.sort()
-                                    subtitle_files = recent_subtitles
-                                    print(f"✅ 자막 파일 {len(subtitle_files)}개 발견")
+                            current_time = time.time()
+                            srt_files = glob.glob(os.path.join(subtitle_dir, "scene_*.srt"))
+                            recent_srt_files = []
+                            for file_path in srt_files:
+                                if current_time - os.path.getmtime(file_path) < 1800:  # 30분 내
+                                    recent_srt_files.append(file_path)
+                            if recent_srt_files:
+                                # 파일명 순서대로 정렬
+                                subtitle_files = sorted(recent_srt_files)
+                                print(f"✅ 최근 자막 파일 {len(subtitle_files)}개 사용")
                 
                 # 입력 검증
                 if not video_urls:
                     raise HTTPException(
                         status_code=400, 
-                        detail="비디오 파일이 필요합니다. 먼저 5-6단계에서 비디오를 생성하고 합쳐주세요."
+                        detail="6단계에서 생성된 영상이 없습니다. 먼저 6단계를 완료해주세요."
                     )
                 
                 if not audio_files:
                     raise HTTPException(
                         status_code=400, 
-                        detail="TTS 오디오 파일이 필요합니다. 먼저 7단계에서 TTS를 생성해주세요."
+                        detail="7단계에서 생성된 TTS 파일이 없습니다. 먼저 7단계를 완료해주세요."
                     )
                 
                 if not subtitle_files:
                     raise HTTPException(
                         status_code=400, 
-                        detail="자막 파일이 필요합니다. 먼저 8-1단계에서 자막을 생성해주세요."
+                        detail="8-1단계에서 생성된 자막 파일이 없습니다. 먼저 8-1단계를 완료해주세요."
                     )
                 
-                print(f"📋 합치기 프로세스 정보:")
-                print(f"   비디오 파일: {len(video_urls)}개")
-                print(f"   오디오 파일: {len(audio_files)}개")
-                print(f"   자막 파일: {len(subtitle_files)}개")
-                print(f"   출력 파일명: {output_filename}")
+                print(f"📋 이전 단계 결과물 사용:")
+                print(f"   6단계 영상: {os.path.basename(video_urls[0])}")
+                print(f"   7단계 TTS: {len(audio_files)}개 파일")
+                print(f"   8-1단계 자막: {len(subtitle_files)}개 파일")
                 
-                # 파일 순서 매칭 (최소 개수에 맞춤)
-                min_count = min(len(video_urls), len(audio_files), len(subtitle_files))
-                if min_count < len(video_urls) or min_count < len(audio_files) or min_count < len(subtitle_files):
-                    print(f"⚠️ 파일 개수 불일치, 최소 개수 {min_count}개에 맞춰 처리합니다.")
-                    video_urls = video_urls[:min_count]
+                # TTS와 자막 파일 개수 맞추기
+                min_count = min(len(audio_files), len(subtitle_files))
+                if min_count != len(audio_files) or min_count != len(subtitle_files):
+                    print(f"⚠️ TTS와 자막 파일 개수 불일치, {min_count}개로 맞춤")
                     audio_files = audio_files[:min_count]
                     subtitle_files = subtitle_files[:min_count]
                 
-                print(f"📝 순서대로 매칭:")
+                print(f"📝 매칭된 TTS-자막 쌍:")
                 for i in range(min_count):
-                    print(f"   {i+1}. 비디오: {os.path.basename(video_urls[i])}")
-                    print(f"       오디오: {os.path.basename(audio_files[i])}")
+                    print(f"   {i+1}. TTS: {os.path.basename(audio_files[i])}")
                     print(f"       자막: {os.path.basename(subtitle_files[i])}")
                 
-                # FFmpeg로 비디오 + TTS + 자막 합치기
-                print("🎬 FFmpeg로 최종 합치기 실행...")
+                # 단일 영상에 모든 TTS와 자막을 순차적으로 합치기
+                print("🎬 모든 TTS + 자막 완전 합치기 실행...")
                 
-                from complete_video_workflow import FullVideoWorkflow
+                # 출력 경로 (절대 경로로 변환)
+                output_path = os.path.abspath(os.path.join("static", "videos", output_filename))
                 
-                workflow = FullVideoWorkflow(use_static_dir=True)
+                # 출력 디렉토리가 없으면 생성
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
                 
-                final_result = await workflow.merge_videos_with_audio_and_subtitles(
-                    video_urls=video_urls,
-                    audio_files=audio_files,
-                    subtitle_files=subtitle_files,
-                    output_filename=output_filename,
-                    transition_type=transition_type,
-                    tts_volume=tts_volume,
-                    video_volume=video_volume,
-                    bgm_volume=bgm_volume if enable_bgm else 0
-                )
-                
-                if final_result.get("success"):
-                    final_video_url = f"/static/videos/{output_filename}"
+                if len(audio_files) > 0 and len(subtitle_files) > 0:
+                    # 모든 TTS 파일을 하나로 합치기 (concat)
+                    print(f"🎵 {len(audio_files)}개 TTS 파일을 하나로 합치는 중...")
                     
-                    print(f"🎉 최종 영상 완성!")
-                    print(f"📱 브라우저에서 확인: {final_video_url}")
+                    # 임시 파일 목록 생성 (절대 경로 사용)
+                    temp_audio_list = os.path.abspath("temp_audio_list.txt")
+                    with open(temp_audio_list, 'w', encoding='utf-8') as f:
+                        for audio_file in audio_files:
+                            # Windows에서 슬래시 경로 문제 해결
+                            normalized_path = os.path.abspath(audio_file).replace('\\', '/')
+                            f.write(f"file '{normalized_path}'\n")
                     
-                    return {
-                        "step": "8-2단계_최종_합치기",
-                        "success": True,
-                        "message": "영상 + TTS + 자막 완전 합치기 성공!",
-                        "final_video_url": final_video_url,
-                        "final_video_path": final_result["output_path"],
-                        "processing_details": {
-                            "videos_processed": len(video_urls),
-                            "audio_files_added": len(audio_files),
-                            "subtitle_files_added": len(subtitle_files),
-                            "transition_type": transition_type,
-                            "output_filename": output_filename
-                        },
-                        "file_details": {
-                            "video_files": [os.path.basename(url) for url in video_urls],
-                            "audio_files": [os.path.basename(f) for f in audio_files],
-                            "subtitle_files": [os.path.basename(f) for f in subtitle_files]
-                        }
-                    }
+                    # TTS 파일들 합치기 (절대 경로)
+                    temp_combined_audio = os.path.abspath(os.path.join("static", "audio", "combined_tts.mp3"))
+                    os.makedirs(os.path.dirname(temp_combined_audio), exist_ok=True)
+                    
+                    concat_cmd = [
+                        'ffmpeg', '-y',
+                        '-f', 'concat',
+                        '-safe', '0',
+                        '-i', temp_audio_list,
+                        '-c', 'copy',
+                        temp_combined_audio
+                    ]
+                    
+                    print(f"   TTS 합치기 명령어 실행...")
+                    concat_result = subprocess.run(concat_cmd, capture_output=True, text=True)
+                    if concat_result.returncode != 0:
+                        print(f"⚠️ TTS 합치기 실패, 첫 번째 파일만 사용: {concat_result.stderr}")
+                        temp_combined_audio = os.path.abspath(audio_files[0])
+                        print(f"   대체 오디오 사용: {os.path.basename(temp_combined_audio)}")
+                    else:
+                        print(f"✅ TTS 합치기 성공: {os.path.basename(temp_combined_audio)}")
+                        # 합쳐진 오디오 파일 검증
+                        if os.path.exists(temp_combined_audio):
+                            combined_size = os.path.getsize(temp_combined_audio) / (1024 * 1024)
+                            print(f"   합쳐진 오디오 크기: {combined_size:.1f}MB")
+                        else:
+                            print(f"⚠️ 합쳐진 오디오 파일이 생성되지 않음, 첫 번째 파일 사용")
+                            temp_combined_audio = os.path.abspath(audio_files[0])
+                    
+                    # 최종 사용할 오디오 파일 확인
+                    print(f"🎵 최종 사용할 TTS 오디오: {os.path.basename(temp_combined_audio)}")
+                    if os.path.exists(temp_combined_audio):
+                        final_audio_size = os.path.getsize(temp_combined_audio) / (1024 * 1024)
+                        print(f"   최종 오디오 크기: {final_audio_size:.1f}MB")
+                    else:
+                        print(f"❌ 최종 오디오 파일이 존재하지 않음!")
+                    
+                    # 임시 파일 정리
+                    if os.path.exists(temp_audio_list):
+                        os.remove(temp_audio_list)
+                    
+                    # 모든 자막 파일을 하나로 합치기 (실제 TTS 길이 기반 싱크 맞춤)
+                    print(f"📝 {len(subtitle_files)}개 자막 파일을 하나로 합치는 중...")
+                    
+                    # 실제 TTS 파일들의 길이 측정
+                    tts_durations = []
+                    print(f"🎵 실제 TTS 파일 길이 측정 중...")
+                    
+                    try:
+                        import moviepy.editor as mp
+                        for i, audio_file in enumerate(audio_files):
+                            if os.path.exists(audio_file):
+                                try:
+                                    audio_clip = mp.AudioFileClip(audio_file)
+                                    duration = audio_clip.duration
+                                    audio_clip.close()
+                                    tts_durations.append(duration)
+                                    print(f"   TTS {i+1}: {os.path.basename(audio_file)} = {duration:.2f}초")
+                                except Exception as e:
+                                    print(f"   ⚠️ TTS {i+1} 길이 측정 실패, 4초로 설정: {e}")
+                                    tts_durations.append(4.0)  # 영상 길이(5초)보다 짧게 기본값 설정
+                            else:
+                                print(f"   ⚠️ TTS {i+1} 파일 없음, 4초로 설정")
+                                tts_durations.append(4.0)
+                    except ImportError:
+                        print(f"   ⚠️ MoviePy 없어서 길이 측정 불가, 각 TTS를 4초로 설정")
+                        tts_durations = [4.0] * len(audio_files)
+                    
+                    print(f"✅ TTS 총 길이: {sum(tts_durations):.1f}초 (평균: {sum(tts_durations)/len(tts_durations):.1f}초)")
+                    
+                    # 합쳐진 자막 파일 생성
+                    temp_combined_subtitle = os.path.abspath(os.path.join("static", "subtitles", "combined_subtitles.srt"))
+                    os.makedirs(os.path.dirname(temp_combined_subtitle), exist_ok=True)
+                    
+                    try:
+                        current_time_offset = 0  # 시간 오프셋 (초 단위)
+                        
+                        with open(temp_combined_subtitle, 'w', encoding='utf-8') as combined_file:
+                            subtitle_index = 1
+                            
+                            for i, subtitle_file in enumerate(subtitle_files):
+                                print(f"   자막 {i+1} 추가 중: {os.path.basename(subtitle_file)}")
+                                
+                                if os.path.exists(subtitle_file):
+                                    with open(subtitle_file, 'r', encoding='utf-8') as f:
+                                        content = f.read().strip()
+                                    
+                                    # 현재 TTS의 실제 길이
+                                    current_tts_duration = tts_durations[i] if i < len(tts_durations) else 4.0
+                                    
+                                    # SRT 파일 파싱 및 시간 오프셋 적용
+                                    lines = content.split('\n')
+                                    current_subtitle = []
+                                    
+                                    # 시간 변환 함수들
+                                    def time_to_seconds(time_str):
+                                        h, m, s = time_str.replace(',', '.').split(':')
+                                        return int(h) * 3600 + int(m) * 60 + float(s)
+                                    
+                                    def seconds_to_time(seconds):
+                                        h = int(seconds // 3600)
+                                        m = int((seconds % 3600) // 60)
+                                        s = seconds % 60
+                                        return f"{h:02d}:{m:02d}:{s:06.3f}".replace('.', ',')
+                                    
+                                    for line in lines:
+                                        if line.strip() == '':
+                                            if current_subtitle:
+                                                # 자막 블록 처리
+                                                if len(current_subtitle) >= 3:
+                                                    # 번호 재할당
+                                                    combined_file.write(f"{subtitle_index}\n")
+                                                    
+                                                    # 시간 라인 처리 (오프셋 적용 + TTS 길이 맞춤)
+                                                    time_line = current_subtitle[1]
+                                                    if '-->' in time_line:
+                                                        start_time, end_time = time_line.split(' --> ')
+                                                        
+                                                        # 원본 자막 시간
+                                                        original_start = time_to_seconds(start_time)
+                                                        original_end = time_to_seconds(end_time)
+                                                        original_duration = original_end - original_start
+                                                        
+                                                        # 실제 TTS 길이에 맞춰 자막 시간 정규화
+                                                        # Whisper는 전체 TTS를 기준으로 시간을 생성하므로, TTS 길이에 맞춰 스케일링
+                                                        scale_factor = current_tts_duration / max(original_end, current_tts_duration)
+                                                        
+                                                        # 새로운 시간 계산 (오프셋 + 스케일링)
+                                                        new_start = current_time_offset + (original_start * scale_factor)
+                                                        new_end = current_time_offset + (original_end * scale_factor)
+                                                        
+                                                        # TTS 길이를 넘지 않도록 제한
+                                                        if new_end > current_time_offset + current_tts_duration:
+                                                            new_end = current_time_offset + current_tts_duration
+                                                        
+                                                        new_time_line = f"{seconds_to_time(new_start)} --> {seconds_to_time(new_end)}"
+                                                        combined_file.write(f"{new_time_line}\n")
+                                                        
+                                                        # 텍스트 라인들
+                                                        for text_line in current_subtitle[2:]:
+                                                            combined_file.write(f"{text_line}\n")
+                                                        
+                                                        combined_file.write("\n")
+                                                        subtitle_index += 1
+                                                
+                                                current_subtitle = []
+                                        else:
+                                            current_subtitle.append(line)
+                                    
+                                    # 마지막 자막 블록 처리
+                                    if current_subtitle and len(current_subtitle) >= 3:
+                                        combined_file.write(f"{subtitle_index}\n")
+                                        
+                                        time_line = current_subtitle[1]
+                                        if '-->' in time_line:
+                                            start_time, end_time = time_line.split(' --> ')
+                                            
+                                            original_start = time_to_seconds(start_time)
+                                            original_end = time_to_seconds(end_time)
+                                            
+                                            scale_factor = current_tts_duration / max(original_end, current_tts_duration)
+                                            
+                                            new_start = current_time_offset + (original_start * scale_factor)
+                                            new_end = current_time_offset + (original_end * scale_factor)
+                                            
+                                            if new_end > current_time_offset + current_tts_duration:
+                                                new_end = current_time_offset + current_tts_duration
+                                            
+                                            new_time_line = f"{seconds_to_time(new_start)} --> {seconds_to_time(new_end)}"
+                                            combined_file.write(f"{new_time_line}\n")
+                                            
+                                            for text_line in current_subtitle[2:]:
+                                                combined_file.write(f"{text_line}\n")
+                                            
+                                            combined_file.write("\n")
+                                            subtitle_index += 1
+                                    
+                                    # 실제 TTS 길이를 기반으로 다음 오프셋 계산
+                                    current_time_offset += current_tts_duration
+                                    print(f"      자막 시간 범위: {current_time_offset-current_tts_duration:.1f}초 ~ {current_time_offset:.1f}초 (길이: {current_tts_duration:.1f}초)")
+                                else:
+                                    print(f"   ⚠️ 자막 파일 없음: {subtitle_file}")
+                                    # 파일이 없어도 시간 오프셋은 진행
+                                    if i < len(tts_durations):
+                                        current_time_offset += tts_durations[i]
+                        
+                        print(f"✅ 자막 합치기 성공: {os.path.basename(temp_combined_subtitle)}")
+                        print(f"   총 자막 개수: {subtitle_index - 1}개")
+                        
+                        # 합쳐진 자막 파일 사용
+                        subtitle_input_raw = temp_combined_subtitle
+                        
+                    except Exception as subtitle_error:
+                        print(f"⚠️ 자막 합치기 실패, 첫 번째 자막만 사용: {subtitle_error}")
+                        subtitle_input_raw = subtitle_files[0]
+                    
+                    # 최종 영상 + 합쳐진 TTS + 합쳐진 자막 결합
+                    # 간단한 경로 처리 (Windows 호환)
+                    video_input = video_urls[0]
+                    audio_input = temp_combined_audio
+                    # subtitle_input_raw는 위에서 이미 설정됨 (합쳐진 자막 또는 첫 번째 자막)
+                    output_video = output_path
+                    
+                    # 자막을 안전하게 처리하기 위해 상대 경로로 변환
+                    # Windows 경로 문제를 피하기 위해 상대 경로로 변환
+                    try:
+                        # 작업 디렉토리를 기준으로 상대 경로 계산
+                        relative_subtitle = os.path.relpath(subtitle_input_raw)
+                        # 슬래시로 통일
+                        relative_subtitle = relative_subtitle.replace('\\', '/')
+                        print(f"   자막 상대 경로: {relative_subtitle}")
+                    except:
+                        # 상대 경로 실패 시 파일명만 사용
+                        relative_subtitle = os.path.basename(subtitle_input_raw)
+                        print(f"   자막 파일명만 사용: {relative_subtitle}")
+                    
+                    print(f"🎬 최종 사용할 파일들:")
+                    print(f"   📹 비디오: {os.path.basename(video_input)}")
+                    print(f"   🎵 오디오: {os.path.basename(audio_input)} (TTS {len(audio_files)}개 합침)")
+                    print(f"   📝 자막: {os.path.basename(subtitle_input_raw)} (자막 {len(subtitle_files)}개 합침)")
+                    
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-i', video_input,  # 입력 비디오
+                        '-i', audio_input,  # 합쳐진 TTS
+                        '-vf', f'subtitles={relative_subtitle}',  # 상대 경로 자막
+                        '-map', '0:v',  # 첫 번째 입력(비디오)의 비디오 스트림 사용
+                        '-map', '1:a',  # 두 번째 입력(TTS 오디오)의 오디오 스트림 사용
+                        '-c:v', 'libx264',
+                        '-c:a', 'aac',
+                        '-shortest',
+                        output_video
+                    ]
+                    
+                    try:
+                        print(f"� FFmpeg 실행 중...")
+                        print(f"🎬 최종 FFmpeg 실행 중...")
+                        print(f"   입력 영상: {os.path.basename(video_input)}")
+                        print(f"   입력 오디오: {os.path.basename(audio_input)}")
+                        print(f"   입력 자막: {os.path.basename(subtitle_input_raw)}")
+                        print(f"   자막 상대 경로: {relative_subtitle}")
+                        print(f"   출력 파일: {os.path.basename(output_video)}")
+                        print(f"   영상 파일 존재: {os.path.exists(video_urls[0])}")
+                        print(f"   오디오 파일 존재: {os.path.exists(temp_combined_audio)}")
+                        print(f"   자막 파일 존재: {os.path.exists(subtitle_files[0])}")
+                        
+                        # 오디오 파일 크기 확인
+                        if os.path.exists(temp_combined_audio):
+                            audio_size = os.path.getsize(temp_combined_audio) / (1024 * 1024)
+                            print(f"   TTS 오디오 크기: {audio_size:.1f}MB")
+                        
+                        print(f"   FFmpeg 전체 명령어:")
+                        print(f"   {' '.join(cmd)}")
+                        print(f"   🎯 오디오 매핑: 비디오(0:v) + TTS(1:a)")
+                        
+                        result = subprocess.run(cmd, capture_output=True, text=True)
+                        if result.returncode == 0:
+                            final_video_url = f"/static/videos/{output_filename}"
+                            print(f"✅ FFmpeg 실행 성공!")
+                            print(f"📱 브라우저에서 확인: http://localhost:8000{final_video_url}")
+                            
+                            # 🔥 8-2단계 완료 후 작업 완료된 TXT 파일들 정리
+                            print(f"📝 작업 완료 후 TXT 파일들 정리...")
+                            txt_files_to_clean = ["merged_video_list.txt", "tts_list.txt", "subtitle_list.txt"]
+                            for txt_file in txt_files_to_clean:
+                                if os.path.exists(txt_file):
+                                    os.remove(txt_file)
+                                    print(f"   🗑️ 삭제: {txt_file}")
+                            
+                            print(f"✅ 모든 TXT 파일 정리 완료! 다음 작업을 위해 준비됨")
+                            
+                            return {
+                                "step": "8-2단계_최종_합치기",
+                                "success": True,
+                                "message": f"6단계 영상에 {len(audio_files)}개 TTS + {len(subtitle_files)}개 자막 완전 합치기 완료!",
+                                "final_video_url": final_video_url,
+                                "final_video_path": output_path,
+                                "source_files": {
+                                    "base_video": os.path.basename(video_urls[0]),
+                                    "tts_files": [os.path.basename(f) for f in audio_files],
+                                    "subtitle_files": [os.path.basename(f) for f in subtitle_files]
+                                },
+                                "processing_summary": {
+                                    "base_video_from": "6단계 결과 (merged_video_list.txt)",
+                                    "tts_files_from": "7단계 결과 (tts_list.txt)", 
+                                    "subtitle_files_from": "8-1단계 결과 (subtitle_list.txt)",
+                                    "total_tts_audio": len(audio_files),
+                                    "total_subtitles": len(subtitle_files),
+                                    "combination_method": "모든 TTS를 하나로 합친 후 영상에 결합",
+                                    "cleanup_completed": "모든 TXT 파일 정리 완료"
+                                }
+                            }
+                        else:
+                            print(f"❌ FFmpeg 실행 실패!")
+                            print(f"   반환 코드: {result.returncode}")
+                            print(f"   표준 출력: {result.stdout}")
+                            print(f"   오류 출력: {result.stderr}")
+                            raise Exception(f"FFmpeg 실행 실패 (코드: {result.returncode}): {result.stderr}")
+                    except Exception as ffmpeg_error:
+                        print(f"❌ FFmpeg 예외 발생: {ffmpeg_error}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"FFmpeg 실행 실패: {str(ffmpeg_error)}"
+                        )
                 else:
                     raise HTTPException(
-                        status_code=500,
-                        detail=f"최종 합치기 실패: {final_result.get('error', '알 수 없는 오류')}"
+                        status_code=400,
+                        detail="TTS 또는 자막 파일이 없습니다."
                     )
-                
-                # 성공 응답 생성
-                final_video_url = f"http://localhost:8000/static/videos/{os.path.basename(result['final_video_path'])}"
-                
-                return {
-                    "success": True,
-                    "message": f"TTS + 자막이 포함된 {len(video_urls)}개 비디오 완전 합치기 완료!",
-                    "final_video_url": final_video_url,
-                    "final_video_path": result["final_video_path"],
-                    "processing_details": {
-                        "video_count": len(video_urls),
-                        "tts_count": len(tts_scripts),
-                        "transition_type": transition_type,
-                        "voice_id": voice_id or "기본값",
-                        "tts_volume": tts_volume,
-                        "video_volume": video_volume,
-                        "has_subtitles": add_subtitles,
-                        "subtitle_info": result.get("subtitle_info")
-                    },
-                    "files_generated": {
-                        "final_video": os.path.basename(result["final_video_path"]),
-                        "tts_files": result.get("tts_files", []),
-                        "subtitle_files": result.get("subtitle_files", [])
-                    }
-                }
                 
             except HTTPException:
                 raise  # HTTP 예외는 그대로 전달

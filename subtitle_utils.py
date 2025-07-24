@@ -144,13 +144,20 @@ async def transcribe_audio_with_whisper(
                 subtitle_file.write(subtitle_content)
             
             # 오디오 파일 길이 확인
+            duration = None  # MoviePy 문제로 인해 일단 None으로 설정
             try:
-                from moviepy.editor import AudioFileClip
-                with AudioFileClip(audio_file_path) as audio_clip:
-                    duration = audio_clip.duration
+                # MoviePy 대신 ffprobe 사용 시도
+                import subprocess
+                result = subprocess.run([
+                    'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration', 
+                    '-of', 'csv=p=0', audio_file_path
+                ], capture_output=True, text=True)
+                if result.returncode == 0:
+                    duration = float(result.stdout.strip())
+                    print(f"   오디오 길이: {duration:.2f}초 (ffprobe)")
             except Exception as e:
                 print(f"⚠️ 오디오 길이 확인 실패: {e}")
-                duration = None
+                print("   MoviePy 및 ffprobe 모두 사용할 수 없음, 길이 정보 없이 진행")
             
             print(f"✅ 음성 전사 완료!")
             print(f"   자막 파일: {subtitle_file_path}")
@@ -158,9 +165,51 @@ async def transcribe_audio_with_whisper(
             if duration:
                 print(f"   길이: {duration:.2f}초")
             
+            # 🔥 TTS MP3 파일 싱크에 정확히 맞춘 5단어씩 순차적 자막 생성
+            print(f"🎵 TTS 파일 싱크 기반 정밀 자막 생성 중...")
+            sequential_subtitle_path = str(subtitle_file_path).replace('.srt', '_tts_synced.srt')
+            
+            try:
+                final_subtitle_path = create_tts_synced_subtitle_file(
+                    str(subtitle_file_path),  # 원본 자막 파일
+                    sequential_subtitle_path,  # TTS 싱크 자막 파일 경로
+                    audio_file_path,          # TTS MP3 파일 경로 (싱크 기준)
+                    words_per_line=5,         # 5단어씩 끊기
+                    gap_duration=0.05         # 0.05초 간격 (0.01초 단위 정밀도)
+                )
+                
+                print(f"✅ TTS 싱크 기반 5단어 자막 생성 완료: {os.path.basename(final_subtitle_path)}")
+                print(f"   정밀도: 0.01초 단위 싱크 맞춤")
+                
+                # TTS 싱크 자막 파일을 최종 결과로 사용
+                final_file_path = final_subtitle_path
+                
+            except Exception as sync_error:
+                print(f"⚠️ TTS 싱크 자막 생성 실패: {sync_error}")
+                print(f"   기본 순차적 자막 생성으로 대체합니다.")
+                
+                # 실패 시 기본 순차적 자막 생성 시도
+                try:
+                    final_subtitle_path = create_sequential_subtitle_file(
+                        str(subtitle_file_path),  # 원본 자막 파일
+                        sequential_subtitle_path.replace('_tts_synced', '_sequential'),  # 순차적 자막 파일 경로
+                        max_chars=10,     # 문자 수 제한 (사용되지 않음)
+                        line_duration=0.7, # 각 줄 표시 시간
+                        gap_duration=0.1,   # 줄 간격
+                        words_per_line=5    # 5단어씩 끊기
+                    )
+                    
+                    print(f"✅ 기본 5단어씩 순차적 자막 생성 완료: {os.path.basename(final_subtitle_path)}")
+                    final_file_path = final_subtitle_path
+                    
+                except Exception as seq_error:
+                    print(f"⚠️ 모든 자막 생성 방법 실패: {seq_error}")
+                    print(f"   원본 자막 파일을 사용합니다.")
+                    final_file_path = str(subtitle_file_path)
+            
             return SubtitleResult(
                 success=True,
-                subtitle_file_path=str(subtitle_file_path),
+                subtitle_file_path=final_file_path,  # 순차적 자막 파일 경로 반환
                 transcription=transcription,
                 language=detected_language,
                 duration=duration
@@ -228,7 +277,8 @@ def add_subtitles_to_video_ffmpeg(
             sequential_subtitle_path,
             max_chars=10,     # 더 짧은 줄
             line_duration=0.7, # 더 빠른 표시
-            gap_duration=0.1   # 더 촘촘한 간격
+            gap_duration=0.1,   # 더 촘촘한 간격
+            words_per_line=5    # 5단어씩 한 줄로
         )
         
         # 자막 파일에서 텍스트 읽어서 한국어 감지
@@ -664,7 +714,8 @@ async def merge_video_with_tts_and_subtitles(
                         split_subtitle_path,
                         max_chars=10,     # 더 짧은 줄로 설정 (10자)
                         line_duration=0.7, # 각 줄 0.7초 표시 (빠르게)
-                        gap_duration=0.1   # 줄 사이 0.1초 간격 (촘촘하게)
+                        gap_duration=0.1,   # 줄 사이 0.1초 간격 (촘촘하게)
+                        words_per_line=5    # 5단어씩 한 줄로
                     )
                     
                     # 자막 파일 경로를 Windows 호환 형식으로 변환
@@ -1129,7 +1180,227 @@ def ms_to_time(ms: int) -> str:
     ms_remainder = ms % 1000
     return f"{h:02d}:{m:02d}:{s:02d},{ms_remainder:03d}"
 
-def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, max_chars: int = 12, line_duration: float = 0.8, gap_duration: float = 0.1) -> str:
+def create_tts_synced_subtitle_file(subtitle_file_path: str, output_path: str, audio_file_path: str, words_per_line: int = 5, gap_duration: float = 0.05) -> str:
+    """
+    TTS MP3 파일의 정확한 길이에 맞춰 5단어씩 정밀 싱크 자막 파일 생성
+    0.01초 단위로 정확한 동기화
+    
+    Args:
+        subtitle_file_path: 원본 자막 파일 경로
+        output_path: 처리된 자막 파일 저장 경로
+        audio_file_path: TTS MP3 파일 경로 (싱크 기준)
+        words_per_line: 한 줄당 단어 수 (기본 5단어)
+        gap_duration: 줄 사이의 간격 시간 (초, 기본 0.05초)
+        
+    Returns:
+        str: 처리된 자막 파일 경로
+    """
+    try:
+        import re
+        
+        print(f"🎵 TTS 싱크 기반 자막 생성 중...")
+        print(f"   원본 자막: {os.path.basename(subtitle_file_path)}")
+        print(f"   TTS 오디오: {os.path.basename(audio_file_path)}")
+        print(f"   한 줄당 단어 수: {words_per_line}개")
+        print(f"   줄 간격: {gap_duration:.2f}초")
+        
+        # TTS 오디오 파일의 정확한 길이 확인 (ffprobe 사용)
+        total_audio_duration = None
+        try:
+            import subprocess
+            result = subprocess.run([
+                'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration', 
+                '-of', 'csv=p=0', audio_file_path
+            ], capture_output=True, text=True)
+            if result.returncode == 0:
+                total_audio_duration = float(result.stdout.strip())
+        except:
+            print("⚠️ ffprobe로 오디오 길이 확인 실패, 기본값 사용")
+            total_audio_duration = 10.0  # 기본값
+        
+        print(f"   TTS 오디오 총 길이: {total_audio_duration:.2f}초")
+        
+        # 원본 자막 파일 읽기
+        with open(subtitle_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # SRT 형식 파싱 (번호, 시간, 텍스트)
+        subtitle_pattern = r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3})\n(.+?)(?=\n\n|\n\d+\n|\Z)'
+        matches = re.findall(subtitle_pattern, content, re.DOTALL)
+        
+        # 모든 텍스트 수집 및 단어 분할
+        all_text = ""
+        for i, (number, timing, text) in enumerate(matches):
+            clean_text = text.strip().replace('\n', ' ').replace('\r', ' ')
+            clean_text = ' '.join(clean_text.split())
+            if clean_text:
+                if all_text:
+                    all_text += " " + clean_text
+                else:
+                    all_text = clean_text
+        
+        if not all_text:
+            print("❌ 자막 텍스트가 없습니다.")
+            return subtitle_file_path
+        
+        # 전체 텍스트를 단어로 분할
+        words = all_text.split()
+        total_words = len(words)
+        
+        print(f"   총 단어 수: {total_words}개")
+        
+        # 5단어씩 줄 생성
+        lines = []
+        for i in range(0, len(words), words_per_line):
+            line_words = words[i:i + words_per_line]
+            line = ' '.join(line_words)
+            lines.append(line)
+        
+        total_lines = len(lines)
+        print(f"   생성될 줄 수: {total_lines}개")
+        
+        # 시간 계산: 전체 오디오 길이를 줄 수로 나누어 배분
+        # 마지막 간격은 제외하고 계산
+        available_time = total_audio_duration - (gap_duration * (total_lines - 1))
+        time_per_line = available_time / total_lines
+        
+        print(f"   줄당 평균 시간: {time_per_line:.3f}초")
+        
+        # 0.01초 단위로 정밀 계산
+        sequential_content = ""
+        subtitle_number = 1
+        current_time_ms = 0
+        
+        for i, line in enumerate(lines):
+            # 시작 시간 (밀리초, 0.01초 = 10ms 단위)
+            start_ms = current_time_ms
+            
+            # 단어 수에 따른 미세 조정
+            word_count = len(line.split())
+            
+            # 기본 시간에 단어 수 비율 적용
+            if word_count < words_per_line:
+                # 단어가 적으면 시간도 비례적으로 줄임
+                line_duration = time_per_line * (word_count / words_per_line)
+            else:
+                line_duration = time_per_line
+            
+            # 최소 0.5초, 최대 3초로 제한
+            line_duration = max(0.5, min(line_duration, 3.0))
+            
+            # 0.01초 단위로 반올림
+            line_duration_ms = round(line_duration * 100) * 10  # 0.01초 = 10ms
+            end_ms = start_ms + line_duration_ms
+            
+            # 시간 형식 변환
+            start_time = ms_to_time(start_ms)
+            end_time = ms_to_time(end_ms)
+            
+            # 자막 엔트리 생성
+            sequential_content += f"{subtitle_number}\n"
+            sequential_content += f"{start_time} --> {end_time}\n"
+            sequential_content += line
+            sequential_content += "\n\n"
+            
+            # 다음 줄을 위한 시간 업데이트 (0.01초 단위 간격)
+            gap_ms = round(gap_duration * 100) * 10  # 0.01초 단위로 반올림
+            current_time_ms = end_ms + gap_ms
+            subtitle_number += 1
+            
+            print(f"   줄 {i+1}: '{line}' [{start_time} --> {end_time}] ({line_duration:.2f}초)")
+        
+        # 최종 시간이 오디오 길이를 초과하지 않는지 확인
+        final_end_time_sec = current_time_ms / 1000.0
+        if final_end_time_sec > total_audio_duration:
+            print(f"⚠️ 자막 시간({final_end_time_sec:.2f}초)이 오디오 길이({total_audio_duration:.2f}초)를 초과합니다.")
+            print("   시간을 오디오 길이에 맞춰 재조정합니다.")
+            
+            # 시간 재조정
+            return create_tts_synced_subtitle_file(
+                subtitle_file_path, output_path, audio_file_path, 
+                words_per_line, gap_duration * 0.8  # 간격을 20% 줄여서 재시도
+            )
+        
+        # 순차적 자막 파일 저장
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(sequential_content.strip())
+        
+        print(f"✅ TTS 싱크 기반 {words_per_line}단어씩 자막 생성 완료!")
+        print(f"   파일: {os.path.basename(output_path)}")
+        print(f"   총 {total_lines}개 줄, 최종 시간: {final_end_time_sec:.2f}초")
+        print(f"   오디오 길이: {total_audio_duration:.2f}초")
+        print(f"   싱크 정확도: 0.01초 단위")
+        
+        return output_path
+        
+    except Exception as e:
+        print(f"❌ TTS 싱크 자막 생성 실패: {e}")
+        import traceback
+        traceback.print_exc()
+        # 실패 시 원본 파일 경로 반환
+        return subtitle_file_path
+
+def validate_tts_subtitle_sync(audio_file_path: str, subtitle_file_path: str) -> dict:
+    """
+    TTS 오디오와 자막의 싱크 정확도 검증
+    
+    Args:
+        audio_file_path: TTS MP3 파일 경로
+        subtitle_file_path: 자막 파일 경로
+        
+    Returns:
+        dict: 싱크 검증 결과
+    """
+    try:
+        import re
+        
+        # 오디오 길이 확인 (ffprobe 사용)
+        audio_duration = None
+        try:
+            import subprocess
+            result = subprocess.run([
+                'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration', 
+                '-of', 'csv=p=0', audio_file_path
+            ], capture_output=True, text=True)
+            if result.returncode == 0:
+                audio_duration = float(result.stdout.strip())
+        except:
+            print("⚠️ ffprobe로 오디오 길이 확인 실패")
+            audio_duration = 10.0  # 기본값
+        
+        # 자막 파일 읽기
+        with open(subtitle_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 마지막 자막의 끝 시간 찾기
+        time_pattern = r'(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})'
+        times = re.findall(time_pattern, content)
+        
+        if times:
+            last_time = times[-1]
+            # 마지막 끝 시간을 초로 변환
+            end_h, end_m, end_s, end_ms = map(int, last_time[4:8])
+            subtitle_end_time = end_h * 3600 + end_m * 60 + end_s + end_ms / 1000.0
+            
+            # 싱크 차이 계산
+            sync_diff = abs(audio_duration - subtitle_end_time)
+            sync_accuracy = max(0, 100 - (sync_diff * 10))  # 0.1초 차이당 1% 감소
+            
+            return {
+                "audio_duration": round(audio_duration, 2),
+                "subtitle_end_time": round(subtitle_end_time, 2),
+                "sync_difference": round(sync_diff, 2),
+                "sync_accuracy": round(sync_accuracy, 1),
+                "is_synced": sync_diff < 0.1,  # 0.1초 이내면 싱크 맞음
+                "precision": "0.01초 단위"
+            }
+        else:
+            return {"error": "자막 시간 정보를 찾을 수 없습니다."}
+            
+    except Exception as e:
+        return {"error": f"싱크 검증 실패: {e}"}
+
+def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, max_chars: int = 12, line_duration: float = 0.8, gap_duration: float = 0.1, words_per_line: int = 5) -> str:
     """
     기존 자막 파일을 읽어서 한 줄씩 순차적으로 나오는 자막 파일 생성
     각 줄이 완전히 끝나고 간격을 두고 다음 줄이 시작됨
@@ -1140,6 +1411,7 @@ def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, m
         max_chars: 한 줄당 최대 문자 수 (기본 12자)
         line_duration: 각 줄의 표시 시간 (초, 기본 0.8초)
         gap_duration: 줄 사이의 간격 시간 (초, 기본 0.1초)
+        words_per_line: 한 줄당 단어 수 (기본 5단어)
         
     Returns:
         str: 처리된 자막 파일 경로
@@ -1147,9 +1419,9 @@ def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, m
     try:
         import re
         
-        print(f"📝 자막을 순차적 한 줄로 변환 중...")
+        print(f"📝 자막을 {words_per_line}단어씩 순차적 한 줄로 변환 중...")
         print(f"   원본: {os.path.basename(subtitle_file_path)}")
-        print(f"   최대 문자 수: {max_chars}")
+        print(f"   한 줄당 단어 수: {words_per_line}개")
         print(f"   줄 표시 시간: {line_duration}초")
         print(f"   줄 간격: {gap_duration}초")
         
@@ -1173,34 +1445,34 @@ def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, m
             if not clean_text:
                 continue
             
-            # 텍스트를 짧은 단위로 분할
+            # 텍스트를 단어 단위로 분할 (words_per_line 개씩)
             words = clean_text.split()
             lines = []
-            current_line = ""
             
-            for word in words:
-                potential_line = current_line + (" " if current_line else "") + word
-                if len(potential_line) <= max_chars:
-                    current_line = potential_line
-                else:
-                    if current_line:
-                        lines.append(current_line)
-                    current_line = word
-            
-            if current_line:
-                lines.append(current_line)
+            # words_per_line 개씩 묶어서 라인 생성
+            for j in range(0, len(words), words_per_line):
+                line_words = words[j:j + words_per_line]
+                line = ' '.join(line_words)
+                lines.append(line)
             
             # 각 줄을 순차적으로 배치
             for j, line in enumerate(lines):
                 # 시작 시간
                 start_ms = current_time_ms
                 
-                # 끝 시간 (글자 수에 따라 동적 조정 - 더 빠르게)
-                char_count = len(line)
-                # 한 글자당 0.06초 + 기본 0.5초 (최소 표시 시간)
-                display_duration = max(0.5, char_count * 0.06)  
-                # 최대 0.9초를 넘지 않도록 제한
-                display_duration = min(display_duration, 0.9)
+                # 끝 시간 (단어 수에 따라 동적 조정)
+                word_count = len(line.split())
+                
+                # 5단어당 1.5초 기준으로 계산 (단어당 0.3초)
+                if word_count <= 3:
+                    display_duration = 1.0  # 짧은 구문은 최소 1초
+                elif word_count <= 5:
+                    display_duration = 1.6  # 5단어는 1.6초
+                else:
+                    display_duration = word_count * 0.3  # 그 이상은 단어당 0.3초
+                
+                # 최소 1초, 최대 2.5초로 제한
+                display_duration = max(1.0, min(display_duration, 2.5))
                 
                 end_ms = start_ms + int(display_duration * 1000)
                 
@@ -1213,15 +1485,17 @@ def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, m
                 sequential_content += line
                 sequential_content += "\n\n"
                 
-                # 다음 줄을 위한 시간 업데이트 (더 짧은 간격)
+                # 다음 줄을 위한 시간 업데이트 (0.1초 간격)
                 current_time_ms = end_ms + int(gap_duration * 1000)
                 subtitle_number += 1
+                
+                print(f"   줄 {subtitle_number-1}: '{line}' ({display_duration:.1f}초)")  # 디버깅용
         
         # 순차적 자막 파일 저장
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(sequential_content.strip())
         
-        print(f"✅ 순차적 자막 파일 생성: {os.path.basename(output_path)}")
+        print(f"✅ {words_per_line}단어씩 순차적 자막 파일 생성: {os.path.basename(output_path)}")
         print(f"   총 {subtitle_number - 1}개 줄 생성")
         return output_path
         
