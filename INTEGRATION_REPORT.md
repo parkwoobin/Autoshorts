@@ -119,7 +119,7 @@ graph TD
 | **5단계** | storyboard_to_tts.py | 스토리보드 → TTS 스크립트 (40자) | TTS Scripts |
 | **6단계** | tts_utils.py | 스크립트 → ElevenLabs 음성 | Audio Files |
 | **7단계** | video_merger.py | 이미지 + TTS → 트랜지션 비디오 | Video + Audio |
-| **8단계** | subtitle_utils.py | Whisper AI → 0.1초 정밀 자막 | Final Video |
+| **8단계** | subtitle_utils.py | Whisper AI → 0.1초 정밀 자막 + SUNO BGM | Final Video + BGM |
 
 ---
 

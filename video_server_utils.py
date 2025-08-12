@@ -4,21 +4,15 @@
 import time  # 타임스탬프 생성용
 import os  # 운영체제 관련 기능 (파일 경로 등)
 from typing import List  # 타입 힌트용 (리스트 타입 명시)
-from video_merger import VideoTransitionMerger  # 영상 합치기 클래스 import
 
 # 테스트용 샘플 영상 URL들 (Runway API로 생성된 실제 영상들)
 SAMPLE_VIDEO_URLS = [
-    # 첫 번째 샘플 영상 (CloudFront CDN을 통해 제공)
-    "https://dnznrvs05pmza.cloudfront.net/9f36c808-ddef-4670-876b-06a10c531075.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiM2U4Y2FjYmZlOTNhZWM4ZCIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc1MTg0NjQwMH0.vykV2ciAAd-6SzlgVBr2hqqGUeTOPKffdV7dKdSGc7A",
-    # 두 번째 샘플 영상 (JWT 토큰으로 인증된 URL)
-    "https://dnznrvs05pmza.cloudfront.net/d947f629-52ee-42c5-a5cc-d4780cd74aff.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiOTI4MWViODUyNzQ2YzIyYiIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc1MTg0NjQwMH0.OfYJy0Tvvh8eVXl7McOQEz5_fJdDZdceG6nD7TIQyt4",
-    # 세 번째 샘플 영상 (만료 시간이 설정된 보안 URL)
-    "https://dnznrvs05pmza.cloudfront.net/606e42bf-f1c8-4e72-bcd6-58bb3510a83c.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiMTk4ZDU5OTA4MTFmMmUwNCIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc1MTg0NjQwMH0.__LNtAR_id8J-SlQsxobOGiDLAWgJiESavXTqLlZvSQ"
 ]
 
-def create_merger_instance(use_static_dir: bool = True, enable_bgm: bool = True) -> VideoTransitionMerger:
-    """VideoTransitionMerger 인스턴스 생성"""
-    return VideoTransitionMerger(use_static_dir=use_static_dir, enable_bgm=enable_bgm)  # 영상 합치기 객체 생성 후 반환
+def create_merger_instance(use_static_dir: bool = True, enable_bgm: bool = True):
+    """VideoTransitionMerger 인스턴스 생성 (임시로 None 반환)"""
+    print("⚠️ VideoTransitionMerger는 moviepy 의존성으로 인해 비활성화됨")
+    return None
 
 def generate_output_filename(prefix: str) -> str:
     """타임스탬프를 포함한 출력 파일명 생성"""
