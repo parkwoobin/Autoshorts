@@ -431,109 +431,108 @@ async def generate_images_sequentially(
     scenes: List[SceneImagePrompt],
     api_key: str
 ) -> List[Dict]:
-    """여러 장면 프롬프트를 받아 '직렬'로 이미지 생성을 요청하고 모든 결과를 반환합니다."""
+    """여러 장면 프롬프트를 받아 DALL-E 3으로 이미지 생성을 요청하고 모든 결과를 반환합니다."""
     
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "X-Runway-Version": "2024-11-06"}
-    base_url = "https://api.dev.runwayml.com/v1"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    base_url = "https://api.openai.com/v1"
     
     generated_images = []
     total_scenes = len(scenes)
     
-    print(f"\n🚀 총 {total_scenes}개의 이미지 생성을 직렬로 시작합니다...")
+    print(f"\n🚀 총 {total_scenes}개의 이미지를 DALL-E 3으로 직렬 생성 시작...")
 
     for i, scene in enumerate(scenes):
-        print(f"\n--- [장면 {i+1}/{total_scenes}] 이미지 생성 시작 ---")
+        print(f"\n--- [장면 {i+1}/{total_scenes}] DALL-E 3 이미지 생성 시작 ---")
         
-        payload = scene.model_dump(by_alias=True, exclude_none=True)
+        # DALL-E 3 API 페이로드 구성
+        payload = {
+            "model": "dall-e-3",
+            "prompt": scene.prompt_text,
+            "n": 1,
+            "size": "1024x1024",  # DALL-E 3 지원 크기
+            "quality": "standard",
+            "response_format": "url"
+        }
         
-        # 🔧 Runway API 호환성을 위한 필수 값들 강제 수정
-        # 1. model 필드 강제 고정 - 텍스트-이미지 생성용 모델로 변경
-        payload["model"] = "gen4_image"
-        print(f"🔧 API 요청 전 model 강제 설정: {payload['model']}")
-        
-        # 2. ratio 값 강제 수정
-        if payload.get("ratio") not in ["1280:720", "720:1280", "1024:1024"]:
-            old_ratio = payload.get("ratio", "unknown")
-            payload["ratio"] = "1280:720"  # 기본값으로 강제 변경
-            print(f"🔄 API 요청 전 ratio 수정: {old_ratio} → {payload['ratio']}")
-        
-        # 잘못된 참조 이미지 필터링 및 안전장치
-        if payload.get("referenceImages"):
-            valid_ref_images = []
-            for ref_img_dict in payload["referenceImages"]:
-                # 'string'이나 잘못된 URI 필터링
-                if (ref_img_dict.get("uri") and 
-                    ref_img_dict.get("uri") != "string" and 
-                    ref_img_dict.get("uri").startswith(("http://", "https://")) and
-                    ref_img_dict.get("tag") and 
-                    ref_img_dict.get("tag") != "string"):
-                    ref_img_dict["weight"] = 0.5
-                    valid_ref_images.append(ref_img_dict)
-                else:
-                    print(f"⚠️ 잘못된 참조 이미지 제외: {ref_img_dict.get('uri')}")
-            
-            # 유효한 참조 이미지가 없으면 referenceImages 키 제거
-            if valid_ref_images:
-                payload["referenceImages"] = valid_ref_images
-            else:
-                print("🔧 모든 참조 이미지가 유효하지 않아 텍스트 프롬프트만 사용합니다.")
-                payload.pop("referenceImages", None)
-        else:
-            # 참조 이미지가 없거나 빈 배열인 경우 키 자체를 제거
-            print("🔧 참조 이미지가 없어 텍스트 프롬프트만 사용합니다.")
-            payload.pop("referenceImages", None)
+        print(f"� DALL-E 3 API 요청: {scene.prompt_text[:50]}...")
+        print(f"🔍 전송할 payload: {payload}")
 
-        async with httpx.AsyncClient(timeout=180) as client:
+        async with httpx.AsyncClient(timeout=120) as client:
             try:
-                # 1. 작업 요청
-                print(f"📤 Runway API 요청: {scene.prompt_text[:40]}...")
-                print(f"🔍 전송할 payload: {payload}")  # 디버깅용 출력
-                response = await client.post(f"{base_url}/text_to_image", headers=headers, json=payload)
+                # DALL-E 3 이미지 생성 요청
+                response = await client.post(f"{base_url}/images/generations", headers=headers, json=payload)
                 
                 if response.status_code != 200:
-                    raise Exception(f"API 요청 실패: {response.text}")
+                    error_text = response.text
+                    print(f"❌ [장면 {i+1}] DALL-E 3 API 오류: {error_text}")
+                    generated_images.append({
+                        "scene_number": i + 1,
+                        "status": "error",
+                        "error": f"DALL-E 3 API 요청 실패: {error_text}",
+                        "prompt": scene.prompt_text
+                    })
+                    continue
                 
-                task_id = response.json()["id"]
-                print(f"  -> 작업 ID: {task_id}")
-
-                # 2. 작업 완료까지 폴링
-                for attempt in range(36):
-                    print(f"⏳ 이미지 생성 진행 확인 중... ({attempt + 1}/{36})")
-                    status_response = await client.get(f"{base_url}/tasks/{task_id}", headers=headers)
-                    status_data = status_response.json()
-                    status = status_data.get("status")
-                    progress = status_data.get("progress", 0)
-                    print(f"   상태: {status}, 진행도: {progress}%")
-
-                    if status == "SUCCEEDED":
-                        print(f"✅ [장면 {i+1}] 이미지 생성 완료!")
-                        generated_images.append({
-                            "scene_index": i + 1,
-                            "status": "success",
-                            "url": status_data.get("output", [None])[0],  # 이미지 URL로 저장
-                            "image_url": status_data.get("output", [None])[0],  # 호환성을 위한 추가 키
-                            "prompt": scene.prompt_text
-                        })
-                        break
-                    elif status == "FAILED":
-                        error_msg = status_data.get("error", "알 수 없는 오류")
-                        print(f"❌ [장면 {i+1}] 이미지 생성 실패: {error_msg}")
-                        generated_images.append({"scene_index": i + 1, "status": "failed", "error": error_msg, "prompt": scene.prompt_text})
-                        break
+                response_data = response.json()
+                
+                if "data" in response_data and len(response_data["data"]) > 0:
+                    image_url = response_data["data"][0]["url"]
+                    revised_prompt = response_data["data"][0].get("revised_prompt", scene.prompt_text)
                     
-                    await asyncio.sleep(5)
+                    print(f"✅ [장면 {i+1}] DALL-E 3 이미지 생성 완료!")
+                    print(f"   🖼️ 이미지 URL: {image_url}")
+                    print(f"   📝 수정된 프롬프트: {revised_prompt[:100]}...")
+                    
+                    generated_images.append({
+                        "scene_number": i + 1,
+                        "status": "success",
+                        "image_url": image_url,
+                        "url": image_url,  # 호환성을 위한 필드
+                        "generated_image_url": image_url,  # 호환성을 위한 필드
+                        "original_prompt": scene.prompt_text,
+                        "revised_prompt": revised_prompt,
+                        "model": "dall-e-3"
+                    })
                 else:
-                    raise Exception("이미지 생성 시간 초과")
-
+                    print(f"❌ [장면 {i+1}] DALL-E 3 응답에 이미지 데이터 없음")
+                    generated_images.append({
+                        "scene_number": i + 1,
+                        "status": "error",
+                        "error": "DALL-E 3 응답에 이미지 데이터 없음",
+                        "prompt": scene.prompt_text
+                    })
+                
             except Exception as e:
                 print(f"❌ [장면 {i+1}] 처리 중 오류 발생: {e}")
-                generated_images.append({"scene_index": i + 1, "status": "error", "error": str(e), "prompt": scene.prompt_text})
+                generated_images.append({
+                    "scene_number": i + 1,
+                    "status": "error",
+                    "error": str(e),
+                    "prompt": scene.prompt_text
+                })
+            
+            # API 호출 간격 조절 (DALL-E 3 rate limit 고려)
+            if i < total_scenes - 1:
+                print("⏱️ API 호출 간격 조절 중... (3초)")
+                await asyncio.sleep(3)
 
-    print("\n🎉 모든 이미지 생성 작업 완료!")
+    print(f"\n🎉 모든 DALL-E 3 이미지 생성 작업 완료!")
+    
+    # 결과 통계
+    successful_count = sum(1 for img in generated_images if img.get("status") == "success")
+    failed_count = total_scenes - successful_count
+    
+    print(f"📊 생성 결과 통계:")
+    print(f"   ✅ 성공: {successful_count}개")
+    print(f"   ❌ 실패: {failed_count}개")
+    print(f"   📈 성공률: {(successful_count / total_scenes) * 100:.1f}%")
+    
     return generated_images
+
 
 # ==================================================================================
 """참조 이미지 분석 : 참조 이미지를 분석해 광고 콘셉트 및 크리에이티브 방향성을 도출"""
+
 async def analyze_reference_images(reference_images: List[ReferenceImage]) -> List[dict]:
     if not reference_images:
         return []

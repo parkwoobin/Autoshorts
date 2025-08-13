@@ -75,3 +75,44 @@ class VideoMergeResult(BaseModel):
     final_video: dict  # 최종 영상 정보
     summary: dict  # 합치기 통계
     source_videos: List[dict]  # 원본 영상들 정보
+
+class TransitionMergeRequest(BaseModel):
+    """트랜지션과 BGM을 포함한 영상 합치기 요청"""
+    enable_bgm: bool = True  # BGM 사용 여부 (기본값: True)
+    bgm_volume: float = 0.4  # BGM 음량 (0.0~1.0, 기본값: 40%)
+    transition_duration: float = 1.0  # 트랜지션 효과 시간 (초)
+
+class BGMGenerationRequest(BaseModel):
+    """SUNO API BGM 생성 요청 (이미지와 동일한 파라미터 구조)"""
+    keyword: str = "happy"  # BGM 키워드 (기본값: "happy")
+    duration: int = 70  # BGM 길이 (초, 기본값: 70초)
+    max_wait_minutes: int = 5  # 최대 대기 시간 (분, 기본값: 5분)
+
+class SubtitleCustomRequest(BaseModel):
+    """커스텀 자막 적용 요청"""
+    srt_file_path: Optional[str] = None  # SRT 파일 경로 (선택사항, 없으면 자동 생성)
+    font_size: int = 2  # 폰트 크기 (기본값: 2)
+    font_name: str = "Malgun Gothic"  # 폰트 이름 (기본값: 맑은 고딕)
+    font_color: str = "&Hffffff"  # 폰트 색상 (기본값: 흰색)
+    scale_x: int = 30  # 가로 스케일 (기본값: 30%)
+    scale_y: int = 30  # 세로 스케일 (기본값: 30%)
+    position: str = "bottom"  # 자막 위치 라벨: "top", "middle", "bottom" (기본값: bottom)
+    margin_v: int = 80  # 세로 여백 (기본값: 80)
+    margin_l: int = 300  # 좌측 여백 (기본값: 300)
+    margin_r: int = 300  # 우측 여백 (기본값: 300)
+    enable_outline: bool = True  # 외곽선 사용 여부 (기본값: True)
+    outline_color: str = "&H000000"  # 외곽선 색상 (기본값: 검은색)
+    outline_width: int = 2  # 외곽선 두께 (기본값: 2)
+    enable_bold: bool = True  # Bold체 사용 여부 (기본값: True)
+
+class TTSSubtitleRequest(BaseModel):
+    """8단계: TTS와 자막 완전 합치기 요청"""
+    tts_volume: float = 5.0  # TTS 음성 볼륨 (배수, 기본값: 500% = 5.0)
+    position: str = "bottom"  # 자막 위치 라벨: "top", "middle", "bottom" (기본값: bottom)
+    include_bgm: str = "false"  # BGM 포함 라벨: "true" 또는 "false" (기본값: "false")
+    font_size: int = 16  # 폰트 크기 (기본값: 16)
+    font_name: str = "Malgun Gothic"  # 폰트 이름 (기본값: 맑은 고딕)
+    font_color: str = "&Hffffff"  # 폰트 색상 (기본값: 흰색)
+    scale_x: int = 50  # 가로 스케일 (기본값: 50%)
+    scale_y: int = 50  # 세로 스케일 (기본값: 50%)
+    enable_outline: bool = True  # 외곽선 사용 여부 (기본값: True)

@@ -5,6 +5,7 @@ import os
 import tempfile
 import asyncio
 import time
+import json
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 import subprocess
@@ -588,12 +589,12 @@ async def merge_video_with_tts_and_subtitles(
     tts_scripts: List[str],
     transition_type: str = "fade",
     voice_id: Optional[str] = None,
-    tts_volume: float = 0.8,
+    tts_volume: float = 1.5,
     video_volume: float = 0.3,
     add_subtitles: bool = True,
     api_key: Optional[str] = None,
     enable_bgm: bool = True,
-    bgm_volume: float = 0.2,
+    bgm_volume: float = 0.4,
     bgm_file: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -722,7 +723,7 @@ async def merge_video_with_tts_and_subtitles(
                     subtitle_path_fixed = split_subtitle_path.replace("\\", "/").replace(":", "\\:")
                     
                     # 한 줄씩 순차적으로 나오는 자막 스타일
-                    subtitle_style = get_sequential_subtitle_style(font_size=30, enable_outline=True)
+                    subtitle_style = get_sequential_subtitle_style(font_size=4, enable_outline=True)
                     
                     # FFmpeg 전체 경로 사용
                     ffmpeg_exe = r'C:\Users\oi3oi\AppData\Local\Microsoft\WinGet\Packages\BtbN.FFmpeg.GPL_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-120061-gcfd1f81e7d-win64-gpl\bin\ffmpeg.exe'
@@ -979,7 +980,7 @@ def get_enhanced_subtitle_style(font_size: int = 30, enable_outline: bool = True
     
     return ",".join(style_options)
 
-def get_sequential_subtitle_style(font_size: int = 14, enable_outline: bool = True) -> str:
+def get_sequential_subtitle_style(font_size: int = 4, enable_outline: bool = True) -> str:
     """
     순차적으로 한 줄씩 나오는 자막을 위한 스타일 설정
     
@@ -992,15 +993,16 @@ def get_sequential_subtitle_style(font_size: int = 14, enable_outline: bool = Tr
     """
     style_options = [
         f"FontSize={font_size}",
+        "FontName=Malgun Gothic",  # 한국어 폰트 지정
         "PrimaryColour=&Hffffff",  # 흰색 텍스트
         "Alignment=2",  # 하단 중앙 정렬
-        "MarginV=50",   # 하단 여백 (더 크게 설정)
-        "MarginL=50",   # 좌측 여백
-        "MarginR=50",   # 우측 여백
-        "WrapStyle=0",  # 스마트 줄바꿈 (한 줄 강제)
-        "ScaleX=100",   # 가로 크기
-        "ScaleY=100",   # 세로 크기
-        "Bold=0",       # 굵은 글씨 해제
+        "MarginV=80",    # 하단 여백 (더 위로)
+        "MarginL=300",   # 좌측 여백 (훨씬 더 늘림)
+        "MarginR=300",   # 우측 여백 (훨씬 더 늘림)
+        "WrapStyle=0",   # 스마트 줄바꿈 (한 줄 강제)
+        "ScaleX=10",     # 가로 크기 10%로 축소
+        "ScaleY=10",     # 세로 크기 10%로 축소
+        "Bold=0",        # 굵은 글씨 해제 (작은 폰트에서는 더 깔끔)
         "PlayResX=1920", # 해상도 X (1920x1080 기준)
         "PlayResY=1080", # 해상도 Y
     ]
@@ -1009,8 +1011,8 @@ def get_sequential_subtitle_style(font_size: int = 14, enable_outline: bool = Tr
         style_options.extend([
             "OutlineColour=&H000000",  # 검은색 외곽선
             "BorderStyle=1",
-            "Outline=3",               # 더 두꺼운 외곽선으로 가독성 향상
-            "Shadow=2"                 # 그림자 효과
+            "Outline=1",               # 외곽선 매우 얇게
+            "Shadow=0"                 # 그림자 없음 (작은 폰트에서는 불필요)
         ])
     
     return ",".join(style_options)
@@ -1180,17 +1182,17 @@ def ms_to_time(ms: int) -> str:
     ms_remainder = ms % 1000
     return f"{h:02d}:{m:02d}:{s:02d},{ms_remainder:03d}"
 
-def create_tts_synced_subtitle_file(subtitle_file_path: str, output_path: str, audio_file_path: str, words_per_line: int = 5, gap_duration: float = 0.05) -> str:
+def create_tts_synced_subtitle_file(subtitle_file_path: str, output_path: str, audio_file_path: str, words_per_line: int = 5, gap_duration: float = 0.4) -> str:
     """
     TTS MP3 파일의 정확한 길이에 맞춰 5단어씩 정밀 싱크 자막 파일 생성
-    0.01초 단위로 정확한 동기화
+    0.01초 단위로 정확한 동기화 - 더 천천히 나오도록 조정
     
     Args:
         subtitle_file_path: 원본 자막 파일 경로
         output_path: 처리된 자막 파일 저장 경로
         audio_file_path: TTS MP3 파일 경로 (싱크 기준)
         words_per_line: 한 줄당 단어 수 (기본 5단어)
-        gap_duration: 줄 사이의 간격 시간 (초, 기본 0.05초)
+        gap_duration: 줄 사이의 간격 시간 (초, 기본 0.4초로 증가)
         
     Returns:
         str: 처리된 자막 파일 경로
@@ -1400,17 +1402,17 @@ def validate_tts_subtitle_sync(audio_file_path: str, subtitle_file_path: str) ->
     except Exception as e:
         return {"error": f"싱크 검증 실패: {e}"}
 
-def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, max_chars: int = 12, line_duration: float = 0.8, gap_duration: float = 0.1, words_per_line: int = 5) -> str:
+def create_sequential_subtitle_file(subtitle_file_path: str, output_path: str, max_chars: int = 12, line_duration: float = 2.0, gap_duration: float = 0.5, words_per_line: int = 5) -> str:
     """
     기존 자막 파일을 읽어서 한 줄씩 순차적으로 나오는 자막 파일 생성
-    각 줄이 완전히 끝나고 간격을 두고 다음 줄이 시작됨
+    각 줄이 완전히 끝나고 간격을 두고 다음 줄이 시작됨 - 더 천천히 나오도록 조정
     
     Args:
         subtitle_file_path: 원본 자막 파일 경로
         output_path: 처리된 자막 파일 저장 경로
         max_chars: 한 줄당 최대 문자 수 (기본 12자)
-        line_duration: 각 줄의 표시 시간 (초, 기본 0.8초)
-        gap_duration: 줄 사이의 간격 시간 (초, 기본 0.1초)
+        line_duration: 각 줄의 표시 시간 (초, 기본 2.0초로 증가)
+        gap_duration: 줄 사이의 간격 시간 (초, 기본 0.5초로 증가)
         words_per_line: 한 줄당 단어 수 (기본 5단어)
         
     Returns:
@@ -1644,40 +1646,30 @@ def time_to_seconds(time_str: str) -> float:
 
 def create_sequential_subtitles_from_text(
     text: str,
-    max_chars_per_line: int = 12,
-    duration_per_char: float = 0.08,
-    gap_between_lines: float = 0.1
+    words_per_line: int = 5,  # 5단어씩 끊기
+    duration_per_word: float = 0.6,  # 단어당 지속 시간 (초) - 더 천천히
+    gap_between_lines: float = 0.3  # 줄 간격 (초) - 더 긴 간격
 ) -> str:
     """
-    텍스트를 순차적 자막(SRT 형식)으로 변환
+    텍스트를 순차적 자막(SRT 형식)으로 변환 - 5단어씩 끊어서 천천히
     
     Args:
         text: 변환할 텍스트
-        max_chars_per_line: 한 줄당 최대 문자 수
-        duration_per_char: 문자당 지속 시간 (초)
+        words_per_line: 한 줄당 단어 수 (기본 5단어)
+        duration_per_word: 단어당 지속 시간 (초)
         gap_between_lines: 줄 간격 (초)
         
     Returns:
         SRT 형식의 자막 문자열
     """
-    # 텍스트를 줄 단위로 분할
+    # 텍스트를 5단어씩 분할
     words = text.split()
     lines = []
-    current_line = ""
     
-    for word in words:
-        if len(current_line + " " + word) <= max_chars_per_line:
-            if current_line:
-                current_line += " " + word
-            else:
-                current_line = word
-        else:
-            if current_line:
-                lines.append(current_line)
-            current_line = word
-    
-    if current_line:
-        lines.append(current_line)
+    # 5단어씩 묶어서 줄 만들기
+    for i in range(0, len(words), words_per_line):
+        line_words = words[i:i + words_per_line]
+        lines.append(" ".join(line_words))
     
     # SRT 형식으로 변환
     srt_content = ""
@@ -1685,7 +1677,8 @@ def create_sequential_subtitles_from_text(
     
     for i, line in enumerate(lines):
         start_time = current_time
-        duration = max(len(line) * duration_per_char, 1.0)  # 최소 1초
+        word_count = len(line.split())
+        duration = word_count * duration_per_word  # 단어 수 × 단어당 시간
         end_time = start_time + duration
         
         # 시간을 SRT 형식으로 변환
@@ -2347,3 +2340,732 @@ def cleanup_srt_list_file(list_file_path: str = "srt_list.txt") -> bool:
     except Exception as e:
         print(f"❌ SRT 목록 파일 삭제 실패: {e}")
         return False
+
+
+def merge_tts_and_subtitle_from_txt_files():
+    """
+    TXT 파일에 기록된 TTS 음성과 SRT 자막을 자동으로 매칭하여 합치기
+    
+    Returns:
+        Dict[str, Any]: 처리 결과
+    """
+    import os
+    import glob
+    import time
+    
+    print("🔍 TXT 파일에서 TTS와 자막 파일 목록 읽기...")
+    
+    # TTS 파일 목록 읽기
+    tts_files = []
+    tts_list_file = "tts_file_list.txt"
+    
+    if os.path.exists(tts_list_file):
+        with open(tts_list_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # TTS 파일 경로 추출
+        for line in content.split('\n'):
+            if line.strip() and not line.startswith('TEXT:') and not line.startswith('DURATION:') and not line.startswith('---') and line.endswith('.mp3'):
+                tts_files.append(line.strip())
+        
+        print(f"📁 찾은 TTS 파일: {len(tts_files)}개")
+        for i, tts in enumerate(tts_files):
+            print(f"   {i+1}. {os.path.basename(tts)}")
+    else:
+        print("❌ tts_file_list.txt 파일을 찾을 수 없습니다.")
+        return {"success": False, "error": "TTS 파일 목록이 없습니다."}
+    
+    # 자막 파일 목록 읽기
+    subtitle_files = []
+    subtitle_list_file = "subtitle_file_list.txt"
+    
+    if os.path.exists(subtitle_list_file):
+        with open(subtitle_list_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            
+        for line in lines:
+            line = line.strip()
+            if line and line.endswith('.srt'):
+                # 경로 정규화
+                if line.startswith('./'):
+                    line = line[2:]
+                subtitle_files.append(line)
+        
+        print(f"📝 찾은 자막 파일: {len(subtitle_files)}개")
+        for i, sub in enumerate(subtitle_files):
+            print(f"   {i+1}. {os.path.basename(sub)}")
+    else:
+        print("❌ subtitle_file_list.txt 파일을 찾을 수 없습니다.")
+        return {"success": False, "error": "자막 파일 목록이 없습니다."}
+    
+    if not tts_files or not subtitle_files:
+        return {"success": False, "error": "TTS 파일 또는 자막 파일이 없습니다."}
+    
+    # 파일 매칭 및 병합
+    print("\n🔗 TTS와 자막 파일 매칭 및 병합 시작...")
+    
+    merged_results = []
+    timestamp = int(time.time())
+    
+    # 각 TTS 파일에 대해 가장 가까운 시간의 자막 파일을 찾아 매칭
+    for i, tts_file in enumerate(tts_files):
+        print(f"\n📽️ [{i+1}/{len(tts_files)}] 처리 중: {os.path.basename(tts_file)}")
+        
+        # TTS 파일명에서 타임스탬프 추출
+        tts_filename = os.path.basename(tts_file)
+        tts_timestamp = None
+        
+        # tts_숫자.mp3 패턴에서 숫자 추출
+        if 'tts_' in tts_filename:
+            try:
+                tts_timestamp_str = tts_filename.split('tts_')[1].split('.')[0]
+                tts_timestamp = int(tts_timestamp_str)
+            except:
+                pass
+        
+        # 가장 가까운 자막 파일 찾기
+        best_subtitle = None
+        min_time_diff = float('inf')
+        
+        for subtitle_file in subtitle_files:
+            subtitle_filename = os.path.basename(subtitle_file)
+            
+            # 자막 파일명에서 타임스탬프 추출
+            if 'tts_' in subtitle_filename:
+                try:
+                    sub_timestamp_str = subtitle_filename.split('tts_')[1].split('_')[0]
+                    sub_timestamp = int(sub_timestamp_str)
+                    
+                    if tts_timestamp:
+                        time_diff = abs(tts_timestamp - sub_timestamp)
+                        if time_diff < min_time_diff:
+                            min_time_diff = time_diff
+                            best_subtitle = subtitle_file
+                except:
+                    pass
+        
+        if best_subtitle:
+            print(f"   🎯 매칭된 자막: {os.path.basename(best_subtitle)}")
+            
+            # 출력 파일명 생성
+            output_filename = f"tts_with_subtitle_{i+1}_{timestamp}.mp4"
+            output_path = os.path.join("static/videos", output_filename)
+            
+            # 디렉토리 생성
+            os.makedirs("static/videos", exist_ok=True)
+            
+            try:
+                # TTS + 자막을 비디오로 변환 (빈 비디오 + TTS + 자막)
+                result = create_video_from_tts_and_subtitle(
+                    tts_file_path=tts_file,
+                    subtitle_file_path=best_subtitle,
+                    output_video_path=output_path
+                )
+                
+                if result.get("success"):
+                    merged_results.append({
+                        "tts_file": tts_file,
+                        "subtitle_file": best_subtitle,
+                        "output_video": output_path,
+                        "success": True
+                    })
+                    print(f"   ✅ 성공: {output_filename}")
+                else:
+                    print(f"   ❌ 실패: {result.get('error', '알 수 없는 오류')}")
+                    
+            except Exception as e:
+                print(f"   ❌ 오류: {e}")
+        else:
+            print(f"   ⚠️ 매칭되는 자막 파일을 찾을 수 없습니다.")
+    
+    # 결과 요약
+    success_count = len([r for r in merged_results if r["success"]])
+    
+    print(f"\n📊 처리 완료:")
+    print(f"   성공: {success_count}개")
+    print(f"   실패: {len(tts_files) - success_count}개")
+    
+    if success_count > 0:
+        print(f"\n📁 생성된 파일들:")
+        for result in merged_results:
+            if result["success"]:
+                print(f"   - {os.path.basename(result['output_video'])}")
+    
+    return {
+        "success": success_count > 0,
+        "total_processed": len(tts_files),
+        "successful": success_count,
+        "failed": len(tts_files) - success_count,
+        "results": merged_results
+    }
+
+
+def create_video_from_tts_and_subtitle(tts_file_path: str, subtitle_file_path: str, output_video_path: str):
+    """
+    TTS 오디오와 자막으로부터 비디오 생성
+    
+    Args:
+        tts_file_path: TTS 오디오 파일 경로
+        subtitle_file_path: 자막 파일 경로
+        output_video_path: 출력 비디오 파일 경로
+        
+    Returns:
+        Dict[str, Any]: 처리 결과
+    """
+    import subprocess
+    import os
+    
+    try:
+        print(f"🎬 TTS + 자막 비디오 생성...")
+        print(f"   🎤 TTS: {os.path.basename(tts_file_path)}")
+        print(f"   📝 자막: {os.path.basename(subtitle_file_path)}")
+        
+        # FFmpeg로 TTS 오디오 길이 확인
+        ffmpeg_exe = r'C:\Users\oi3oi\AppData\Local\Microsoft\WinGet\Packages\BtbN.FFmpeg.GPL_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-120061-gcfd1f81e7d-win64-gpl\bin\ffmpeg.exe'
+        
+        try:
+            # FFmpeg로 오디오 길이 확인
+            duration_cmd = [ffmpeg_exe, "-i", tts_file_path, "-f", "null", "-"]
+            duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
+            
+            # stderr에서 Duration 정보 추출
+            duration_line = [line for line in duration_result.stderr.split('\n') if 'Duration:' in line]
+            if duration_line:
+                duration_str = duration_line[0].split('Duration: ')[1].split(',')[0]
+                # HH:MM:SS.ms 형식을 초로 변환
+                time_parts = duration_str.split(':')
+                audio_duration = float(time_parts[0]) * 3600 + float(time_parts[1]) * 60 + float(time_parts[2])
+                print(f"   ⏱️ 오디오 길이: {audio_duration:.2f}초")
+            else:
+                audio_duration = 5.0  # 기본값
+                print(f"   ⏱️ 오디오 길이 감지 실패, 기본값 사용: {audio_duration}초")
+        except:
+            audio_duration = 5.0  # 기본값
+            print(f"   ⏱️ 오디오 길이 감지 실패, 기본값 사용: {audio_duration}초")
+        
+        # 자막 파일 경로를 FFmpeg 호환 형식으로 변환
+        subtitle_path_fixed = subtitle_file_path.replace("\\", "/").replace(":", "\\:")
+        
+        # 검은 배경 비디오 + TTS 오디오 + 자막 생성
+        cmd = [
+            ffmpeg_exe, "-y",
+            "-f", "lavfi",
+            "-i", f"color=c=black:size=1280x720:duration={audio_duration}:rate=30",  # 검은 배경 비디오
+            "-i", tts_file_path,  # TTS 오디오
+            "-vf", f"subtitles='{subtitle_path_fixed}':force_style='FontName=Malgun Gothic,FontSize=30,BorderStyle=1,BackColour=&H80000000,BorderWidth=2'",  # 자막 추가
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-map", "0:v:0",  # 비디오 스트림
+            "-map", "1:a:0",  # 오디오 스트림
+            "-shortest",
+            output_video_path
+        ]
+        
+        print(f"🔧 FFmpeg 명령 실행 중...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode == 0:
+            print(f"✅ 비디오 생성 완료: {os.path.basename(output_video_path)}")
+            
+            # 파일 크기 확인
+            if os.path.exists(output_video_path):
+                file_size = os.path.getsize(output_video_path)
+                file_size_mb = file_size / (1024 * 1024)
+                print(f"   📊 파일 크기: {file_size_mb:.2f} MB")
+            
+            return {"success": True, "output_file": output_video_path}
+        else:
+            error_msg = f"FFmpeg 오류: {result.stderr}"
+            print(f"❌ {error_msg}")
+            return {"success": False, "error": error_msg}
+            
+    except Exception as e:
+        error_msg = f"비디오 생성 중 오류: {e}"
+        print(f"❌ {error_msg}")
+        return {"success": False, "error": error_msg}
+
+
+def merge_all_tts_subtitle_videos():
+    """
+    TXT 파일을 기반으로 TTS+자막 비디오들을 생성한 후 하나로 합치기
+    
+    Returns:
+        Dict[str, Any]: 최종 병합 결과
+    """
+    import os
+    import time
+    
+    print("🎬 TTS + 자막 → 비디오 → 병합 전체 프로세스 시작...")
+    
+    # 1단계: TTS와 자막으로 개별 비디오 생성
+    merge_result = merge_tts_and_subtitle_from_txt_files()
+    
+    if not merge_result.get("success"):
+        return merge_result
+    
+    # 2단계: 생성된 비디오들을 하나로 병합
+    print(f"\n🔗 2단계: {merge_result['successful']}개 비디오를 하나로 병합...")
+    
+    video_paths = []
+    for result in merge_result["results"]:
+        if result["success"] and os.path.exists(result["output_video"]):
+            video_paths.append(result["output_video"])
+    
+    if not video_paths:
+        return {"success": False, "error": "병합할 비디오가 없습니다."}
+    
+    # SimplVideoMerger 사용해서 병합
+    from video_server_utils import SimplVideoMerger
+    
+    merger = SimplVideoMerger(use_static_dir=True)
+    
+    # 비디오 파일들을 URL 형식으로 변환
+    video_urls = []
+    for video_path in video_paths:
+        # 절대 경로를 상대 URL로 변환
+        if "static/videos" in video_path:
+            relative_path = video_path.split("static/videos/")[-1]
+            video_url = f"http://localhost:8000/static/videos/{relative_path}"
+            video_urls.append(video_url)
+    
+    try:
+        timestamp = int(time.time())
+        final_output_filename = f"merged_tts_subtitle_videos_{timestamp}.mp4"
+        
+        print(f"📽️ 최종 병합 시작: {len(video_urls)}개 비디오")
+        
+        final_video_path = merger.merge_videos_with_frame_transitions(
+            video_urls=video_urls,
+            output_filename=final_output_filename
+        )
+        
+        print(f"✅ 최종 병합 완료: {final_output_filename}")
+        
+        return {
+            "success": True,
+            "individual_videos": merge_result["successful"],
+            "final_merged_video": final_video_path,
+            "final_video_url": f"/static/videos/{final_output_filename}",
+            "process_summary": {
+                "step1_tts_subtitle_merge": merge_result["successful"],
+                "step2_video_merge": 1,
+                "total_source_files": merge_result["total_processed"]
+            }
+        }
+        
+    except Exception as e:
+        error_msg = f"비디오 병합 중 오류: {e}"
+        print(f"❌ {error_msg}")
+        return {"success": False, "error": error_msg}
+
+
+def get_ffmpeg_path():
+    """FFmpeg 실행 파일 경로 찾기"""
+    import shutil
+    
+    # 시스템 PATH에서 찾기
+    ffmpeg_path = shutil.which('ffmpeg')
+    if ffmpeg_path:
+        return ffmpeg_path
+    
+    # Windows용 일반적인 경로들 확인
+    possible_paths = [
+        r"C:\Users\oi3oi\AppData\Local\Microsoft\WinGet\Packages\BtbN.FFmpeg.GPL_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-N-120061-gcfd1f81e7d-win64-gpl\bin\ffmpeg.EXE",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+        r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    
+    return "ffmpeg"  # 기본값
+
+
+def get_simple_video_duration(video_path):
+    """비디오 길이 간단히 확인"""
+    try:
+        ffmpeg_path = get_ffmpeg_path()
+        ffprobe_path = ffmpeg_path.replace('ffmpeg', 'ffprobe')
+        
+        cmd = [
+            ffprobe_path, "-v", "quiet", "-print_format", "json",
+            "-show_format", video_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            return float(data.get('format', {}).get('duration', 0))
+    except:
+        pass
+    return 0
+
+
+def merge_video_with_tts_and_subtitles():
+    """
+    기존 트랜지션 비디오(BGM 포함)에 TTS 나레이션과 자막을 오버레이로 추가
+    검은 배경이 아닌 실제 비디오 위에 자막과 음성을 합성
+    """
+    print("🎬 트랜지션 비디오에 TTS+자막 오버레이 추가 시작...")
+    
+    try:
+        # 1단계: 기존 BGM 비디오 찾기
+        print("🔍 1단계: 기존 BGM 비디오 찾기...")
+        video_dir = os.path.join(os.getcwd(), "static", "videos")
+        
+        bgm_videos = []
+        for file in os.listdir(video_dir):
+            if file.endswith('.mp4') and 'merged_ai_videos_with_bgm' in file:
+                bgm_videos.append(file)
+        
+        if not bgm_videos:
+            print("❌ BGM이 포함된 트랜지션 비디오를 찾을 수 없습니다.")
+            return {'success': False, 'error': 'BGM 비디오 없음'}
+        
+        bgm_videos.sort(reverse=True)  # 최신 파일
+        base_video = os.path.join(video_dir, bgm_videos[0])
+        print(f"✅ 기본 비디오: {bgm_videos[0]}")
+        
+        # 2단계: TTS 파일들 읽기
+        print("📝 2단계: TTS 파일 목록 읽기...")
+        tts_files = []
+        try:
+            with open('tts_file_list.txt', 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and os.path.exists(line):
+                        tts_files.append(line)
+                        print(f"   📁 TTS: {os.path.basename(line)}")
+        except:
+            print("❌ tts_file_list.txt 파일을 읽을 수 없습니다.")
+            return {'success': False, 'error': 'TTS 파일 목록 없음'}
+        
+        # 3단계: 자막 파일들 읽기
+        print("📝 3단계: 자막 파일 목록 읽기...")
+        subtitle_files = []
+        try:
+            with open('subtitle_file_list.txt', 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and os.path.exists(line):
+                        subtitle_files.append(line)
+                        print(f"   📄 자막: {os.path.basename(line)}")
+        except:
+            print("❌ subtitle_file_list.txt 파일을 읽을 수 없습니다.")
+            return {'success': False, 'error': '자막 파일 목록 없음'}
+        
+        if not tts_files or not subtitle_files:
+            print("❌ TTS 또는 자막 파일이 없습니다.")
+            return {'success': False, 'error': 'TTS 또는 자막 파일 없음'}
+        
+        # 4단계: 모든 TTS 오디오를 하나로 합치기
+        print("🔗 4단계: TTS 오디오들을 하나로 합치기...")
+        merged_tts = os.path.join(video_dir, f"merged_tts_{int(time.time())}.mp3")
+        
+        ffmpeg_exe = get_ffmpeg_path()
+        
+        # TTS 파일들을 concat으로 합치기
+        tts_concat_list = os.path.join(video_dir, "tts_concat_list.txt")
+        with open(tts_concat_list, 'w', encoding='utf-8') as f:
+            for tts_file in tts_files:
+                f.write(f"file '{tts_file}'\n")
+        
+        # TTS 합치기
+        tts_cmd = [
+            ffmpeg_exe, "-f", "concat", "-safe", "0",
+            "-i", tts_concat_list,
+            "-c", "copy",
+            merged_tts, "-y"
+        ]
+        
+        result = subprocess.run(tts_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"❌ TTS 합치기 실패: {result.stderr}")
+            return {'success': False, 'error': f'TTS 합치기 실패: {result.stderr}'}
+        
+        print(f"✅ TTS 합치기 완료: {os.path.basename(merged_tts)}")
+        
+        # 5단계: 모든 자막을 하나로 합치기 (시간 오프셋 계산)
+        print("📝 5단계: 자막들을 하나로 합치기...")
+        merged_subtitle = os.path.join(video_dir, f"merged_subtitle_{int(time.time())}.srt")
+        
+        total_offset = 0
+        merged_subtitle_content = []
+        subtitle_index = 1
+        
+        for i, (tts_file, subtitle_file) in enumerate(zip(tts_files, subtitle_files)):
+            # TTS 길이 계산
+            duration = get_simple_video_duration(tts_file)
+            
+            # 자막 파일 읽기
+            try:
+                with open(subtitle_file, 'r', encoding='utf-8') as f:
+                    subtitle_content = f.read()
+                
+                # 자막 시간 오프셋 적용
+                import re
+                subtitle_blocks = re.split(r'\n\s*\n', subtitle_content.strip())
+                
+                for block in subtitle_blocks:
+                    if block.strip():
+                        lines = block.strip().split('\n')
+                        if len(lines) >= 3:
+                            # 시간 라인 수정
+                            time_line = lines[1]
+                            # 00:00:01,000 --> 00:00:03,000 형식
+                            time_match = re.match(r'(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})', time_line)
+                            if time_match:
+                                start_h, start_m, start_s, start_ms = map(int, time_match.groups()[:4])
+                                end_h, end_m, end_s, end_ms = map(int, time_match.groups()[4:])
+                                
+                                # 오프셋 적용
+                                start_total_ms = (start_h * 3600 + start_m * 60 + start_s) * 1000 + start_ms + (total_offset * 1000)
+                                end_total_ms = (end_h * 3600 + end_m * 60 + end_s) * 1000 + end_ms + (total_offset * 1000)
+                                
+                                new_start_h = int(start_total_ms // 3600000)
+                                new_start_m = int((start_total_ms % 3600000) // 60000)
+                                new_start_s = int((start_total_ms % 60000) // 1000)
+                                new_start_ms = int(start_total_ms % 1000)
+                                
+                                new_end_h = int(end_total_ms // 3600000)
+                                new_end_m = int((end_total_ms % 3600000) // 60000)
+                                new_end_s = int((end_total_ms % 60000) // 1000)
+                                new_end_ms = int(end_total_ms % 1000)
+                                
+                                new_time_line = f"{new_start_h:02d}:{new_start_m:02d}:{new_start_s:02d},{new_start_ms:03d} --> {new_end_h:02d}:{new_end_m:02d}:{new_end_s:02d},{new_end_ms:03d}"
+                                
+                                # 새 자막 블록 생성
+                                merged_subtitle_content.append(f"{subtitle_index}")
+                                merged_subtitle_content.append(new_time_line)
+                                merged_subtitle_content.extend(lines[2:])  # 자막 텍스트
+                                merged_subtitle_content.append("")  # 빈 줄
+                                subtitle_index += 1
+            except Exception as e:
+                print(f"⚠️ 자막 파일 처리 오류: {e}")
+            
+            total_offset += duration
+        
+        # 합쳐진 자막 저장
+        with open(merged_subtitle, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(merged_subtitle_content))
+        
+        print(f"✅ 자막 합치기 완료: {os.path.basename(merged_subtitle)}")
+        
+        # 6단계: 기존 비디오에 TTS 오디오와 자막 오버레이
+        print("🎬 6단계: 비디오에 TTS 오디오와 자막 오버레이...")
+        timestamp = int(time.time())
+        final_output = os.path.join(video_dir, f"final_video_with_tts_overlay_{timestamp}.mp4")
+        
+        # 자막 경로 수정 (Windows 경로 문제 해결)
+        subtitle_path_fixed = merged_subtitle.replace('\\', '/').replace(':', '\\:')
+        
+        # FFmpeg 명령 (기존 비디오 + 새 TTS 오디오 + 자막 오버레이)
+        cmd = [
+            ffmpeg_exe, "-y",
+            "-i", base_video,  # 기존 비디오 (BGM 포함)
+            "-i", merged_tts,  # 새 TTS 오디오
+            "-filter_complex", 
+            f"[0:v]subtitles='{subtitle_path_fixed}':force_style='FontName=Malgun Gothic,FontSize=24,BorderStyle=1,BackColour=&H80000000,BorderWidth=2'[v_out]; [0:a]volume=0.4[bg_audio]; [1:a]volume=1.5[tts_audio]; [bg_audio][tts_audio]amix=inputs=2:duration=longest:dropout_transition=0[aout]",
+            "-map", "[v_out]",  # 자막이 합성된 비디오
+            "-map", "[aout]",  # 믹싱된 오디오
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            final_output
+        ]
+        
+        print(f"🔧 FFmpeg 명령 실행...")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            file_size = os.path.getsize(final_output) / (1024 * 1024)
+            duration = get_simple_video_duration(final_output)
+            
+            print(f"✅ 최종 비디오 생성 완료!")
+            print(f"📁 파일: {os.path.basename(final_output)}")
+            print(f"📊 크기: {file_size:.2f} MB")
+            print(f"⏱️ 길이: {duration:.2f}초")
+            
+            return {
+                'success': True,
+                'final_video': final_output,
+                'base_video': base_video,
+                'merged_tts': merged_tts,
+                'merged_subtitle': merged_subtitle,
+                'file_size_mb': file_size,
+                'duration': duration
+            }
+        else:
+            print(f"❌ FFmpeg 오류: {result.stderr}")
+            return {'success': False, 'error': f'FFmpeg 오류: {result.stderr}'}
+            
+    except Exception as e:
+        print(f"❌ 오버레이 처리 중 오류: {str(e)}")
+        return {'success': False, 'error': str(e)}
+
+
+def merge_everything_together():
+    """
+    모든 비디오를 함께 합치는 완전한 통합 함수
+    1. 기존 트랜지션 비디오들
+    2. TTS+자막 비디오들
+    3. 모든 것을 하나로 병합
+    """
+    print("🎬 모든 비디오 통합 병합 프로세스 시작...")
+    
+    try:
+        # 1단계: TTS+자막 비디오 생성
+        print("📝 1단계: TTS+자막 비디오 생성...")
+        tts_result = merge_tts_and_subtitle_from_txt_files()
+        
+        if not tts_result.get('success', False):
+            print(f"❌ TTS+자막 비디오 생성 실패: {tts_result}")
+            return {'success': False, 'error': 'TTS+자막 비디오 생성 실패'}
+        
+        # 2단계: 모든 비디오 파일 찾기
+        print("🔍 2단계: 모든 비디오 파일 찾기...")
+        video_dir = os.path.join(os.getcwd(), "static", "videos")
+        
+        # 트랜지션 비디오들 찾기 (가장 최신)
+        transition_videos = []
+        bgm_videos = []
+        tts_videos = []
+        
+        for file in os.listdir(video_dir):
+            if file.endswith('.mp4'):
+                if 'frame_transitions' in file:
+                    transition_videos.append(file)
+                elif 'merged_ai_videos_with_bgm' in file:
+                    bgm_videos.append(file)
+                elif 'tts_with_subtitle' in file and file.startswith('tts_with_subtitle_'):
+                    # 개별 TTS 비디오들만 (merged 아닌)
+                    if 'final_merged' not in file:
+                        tts_videos.append(file)
+        
+        # 최신 파일들 선택
+        transition_videos.sort(reverse=True)
+        bgm_videos.sort(reverse=True)
+        tts_videos.sort()  # TTS는 순서대로
+        
+        print(f"📁 찾은 트랜지션 비디오: {len(transition_videos)}개")
+        print(f"📁 찾은 BGM 비디오: {len(bgm_videos)}개") 
+        print(f"📁 찾은 TTS 비디오: {len(tts_videos)}개")
+        
+        # 3단계: 병합할 비디오 목록 생성
+        merge_list = []
+        
+        # 우선순위: BGM > 트랜지션 > TTS
+        if bgm_videos:
+            merge_list.append(bgm_videos[0])  # 최신 BGM 비디오
+            print(f"✅ BGM 비디오 추가: {bgm_videos[0]}")
+        elif transition_videos:
+            merge_list.append(transition_videos[0])  # 최신 트랜지션 비디오
+            print(f"✅ 트랜지션 비디오 추가: {transition_videos[0]}")
+        
+        # TTS 비디오들 추가
+        for tts_video in tts_videos:
+            merge_list.append(tts_video)
+            print(f"✅ TTS 비디오 추가: {tts_video}")
+        
+        if not merge_list:
+            print("❌ 병합할 비디오가 없습니다.")
+            return {'success': False, 'error': '병합할 비디오가 없습니다.'}
+        
+        # 4단계: FFmpeg concat 목록 파일 생성
+        print("📝 3단계: FFmpeg concat 목록 생성...")
+        concat_file = os.path.join(video_dir, "complete_merge_list.txt")
+        with open(concat_file, 'w', encoding='utf-8') as f:
+            for video in merge_list:
+                f.write(f"file '{video}'\n")
+                print(f"   📄 추가: {video}")
+        
+        # 5단계: FFmpeg로 모든 비디오 병합
+        print("🔗 4단계: 모든 비디오 병합...")
+        timestamp = int(time.time() * 1000)
+        final_output = os.path.join(video_dir, f"complete_merged_video_{timestamp}.mp4")
+        
+        ffmpeg_exe = get_ffmpeg_path()
+        cmd = [
+            ffmpeg_exe, "-f", "concat", "-safe", "0",
+            "-i", concat_file,
+            "-c", "copy",
+            final_output
+        ]
+        
+        print(f"🔧 FFmpeg 명령: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            file_size = os.path.getsize(final_output) / (1024 * 1024)  # MB
+            print(f"✅ 완전한 비디오 병합 성공!")
+            print(f"📁 최종 파일: {os.path.basename(final_output)}")
+            print(f"📊 파일 크기: {file_size:.2f} MB")
+            
+            # 비디오 정보 확인
+            try:
+                duration = get_simple_video_duration(final_output)
+                print(f"⏱️ 총 길이: {duration:.2f}초")
+            except:
+                duration = 0
+                print("⏱️ 총 길이: 확인 불가")
+            
+            return {
+                'success': True,
+                'final_video': final_output,
+                'merged_videos': merge_list,
+                'file_size_mb': file_size,
+                'duration': duration
+            }
+        else:
+            print(f"❌ FFmpeg 병합 실패: {result.stderr}")
+            return {'success': False, 'error': f'FFmpeg 오류: {result.stderr}'}
+            
+    except Exception as e:
+        print(f"❌ 통합 병합 중 오류: {str(e)}")
+        return {'success': False, 'error': str(e)}
+
+
+def test_txt_file_content():
+    """
+    TXT 파일의 내용을 확인하는 테스트 함수
+    """
+    import os
+    
+    print("🔍 TXT 파일 내용 확인...")
+    
+    # TTS 파일 목록 확인
+    tts_list_file = "tts_file_list.txt"
+    if os.path.exists(tts_list_file):
+        print(f"\n📁 {tts_list_file} 내용:")
+        with open(tts_list_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            print(content[:500] + "..." if len(content) > 500 else content)
+    else:
+        print(f"❌ {tts_list_file} 파일이 없습니다.")
+    
+    # 자막 파일 목록 확인
+    subtitle_list_file = "subtitle_file_list.txt"
+    if os.path.exists(subtitle_list_file):
+        print(f"\n📝 {subtitle_list_file} 내용:")
+        with open(subtitle_list_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            print(content[:500] + "..." if len(content) > 500 else content)
+    else:
+        print(f"❌ {subtitle_list_file} 파일이 없습니다.")
+    
+    # 직접 실행 시 TTS와 자막 병합 실행
+    print(f"\n🚀 TTS와 자막 자동 병합을 시작하시겠습니까?")
+    print("다음 함수를 호출하세요:")
+    print("  merge_tts_and_subtitle_from_txt_files()  # 개별 비디오 생성")
+    print("  merge_all_tts_subtitle_videos()         # 전체 프로세스 (생성 + 병합)")
+    
+    return True
+
+
+# 테스트용 직접 실행
+if __name__ == "__main__":
+    test_txt_file_content()

@@ -26,7 +26,7 @@ async def create_multiple_videos_with_sequential_subtitles(
     font_size: int = 30,
     max_chars_per_line: int = 6,
     tts_volume: float = 0.8,
-    bgm_volume: float = 0.3,
+    bgm_volume: float = 0.4,
     enable_bgm: bool = True,
     specific_bgm: Optional[str] = None,
     output_dir: str = "./static/videos",
@@ -299,7 +299,7 @@ async def create_enhanced_video_with_tts_and_subtitles(
     font_size: int = 30,  # 30pt로 기본 크기 (subtitle_utils.py와 동일)
     max_chars_per_line: int = 6,
     tts_volume: float = 0.8,
-    bgm_volume: float = 0.3,
+    bgm_volume: float = 0.4,
     enable_bgm: bool = True,
     specific_bgm: Optional[str] = None,
     output_dir: str = "./static/videos",
